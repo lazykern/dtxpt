@@ -1,0 +1,18 @@
+[package]
+name = "dtxpt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+bevy = { version = "0.18.1", features = ["bevy_remote"] }
+bevy_kira_audio = "0.25.0"
+kira = { version = "0.10", features = ["ogg", "wav"] }
+encoding_rs = "0.8.35"
+ron = "0.12.1"
+serde = { version = "1.0.228", features = ["derive"] }
+bevy_midi = { git = "https://github.com/BlackPhlox/bevy_midi" }
+midir = "0.10"
+directories = "6"
+image = "0.25"
+bevy_brp_extras = "0.19.0"
