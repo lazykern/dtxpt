@@ -169,6 +169,8 @@ pub(crate) fn merge_decoded_audio(
     mut commands: Commands,
     mut sound_bank: ResMut<SoundBank>,
     receiver: Option<ResMut<BackgroundDecodeReceiver>>,
+    mut playback_diag: ResMut<crate::gameplay::PlaybackDiagnostics>,
+    run: Res<crate::gameplay::RunState>,
     asset_server: Res<AssetServer>,
 ) {
     let Some(mut receiver) = receiver else {
@@ -206,6 +208,10 @@ pub(crate) fn merge_decoded_audio(
 
     receiver.pending = receiver.pending.saturating_sub(merged);
     let pending = receiver.pending;
+    if crate::gameplay::diagnostics::diag_active(&run) {
+        playback_diag.bg_decode_merges += 1;
+        debug!("merged {merged} background-decoded WAV files ({pending} pending)");
+    }
     info!(
         "merged {} background-decoded WAV files ({} pending)",
         merged, pending

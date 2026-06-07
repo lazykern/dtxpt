@@ -1,11 +1,8 @@
 use bevy::prelude::*;
 
-use super::types::{
-    BindingTarget, DrumLane, InputBindingConfig, InputSourceConfig,
-    SystemAction,
-};
 use super::defaults::default_system_bindings;
 use super::keycodes::{keycode_from_name, keycode_name};
+use super::types::{BindingTarget, DrumLane, InputBindingConfig, InputSourceConfig, SystemAction};
 
 pub fn add_keyboard_lane_binding(
     bindings: &mut Vec<InputBindingConfig>,

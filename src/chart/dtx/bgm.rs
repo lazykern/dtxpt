@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use super::channels::dtx_wav_volume_command_id;
 use super::text::{parse_directive, read_text};
 use super::util::{base36_pair, base36_str, normalized_pairs};
-use super::channels::dtx_wav_volume_command_id;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChartBgm {

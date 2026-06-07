@@ -11,7 +11,8 @@ use crate::app::state::AppState;
 use crate::audio::{GameRng, rng_next_usize};
 use crate::config::{GameConfig, library_cache_path, save_game_config};
 use crate::current_song::{
-    CurrentSong, align_library_to_current_song, apply_library_selection, enrich_current_song_from_library,
+    CurrentSong, align_library_to_current_song, apply_library_selection,
+    enrich_current_song_from_library,
 };
 use crate::gameplay::SelectedChartPath;
 use crate::persistence::ScoreStore;
@@ -241,10 +242,7 @@ fn rebuild_song_list(
         let chart_index = list_chart_index(library, entry_index, preferred);
         let chart = &entry.charts[chart_index];
         let artist = entry.artist.as_deref().unwrap_or("");
-        let level = chart
-            .level
-            .map(fmt_level)
-            .unwrap_or_default();
+        let level = chart.level.map(fmt_level).unwrap_or_default();
         let best = if selected {
             scores
                 .best_for_path(&chart.path)
@@ -473,7 +471,13 @@ pub(crate) fn song_select_card_interaction(
         library.selected_entry = card.entry_index;
         library.apply_preferred_difficulty(&config.preferred_difficulty);
         if already_selected {
-            confirm_chart_play(&library, &mut current, &mut config, &mut selected, &mut next_state);
+            confirm_chart_play(
+                &library,
+                &mut current,
+                &mut config,
+                &mut selected,
+                &mut next_state,
+            );
         }
     }
 }
@@ -502,11 +506,12 @@ pub(crate) fn song_select_input(
     }
     for key in keyboard.get_just_pressed() {
         if *key != KeyCode::Space
-            && let Some(ch) = search_char(*key) {
-                library.search.push(ch);
-                library.normalize_selection(&config.preferred_difficulty);
-                changed = true;
-            }
+            && let Some(ch) = search_char(*key)
+        {
+            library.search.push(ch);
+            library.normalize_selection(&config.preferred_difficulty);
+            changed = true;
+        }
     }
     if keyboard.just_pressed(KeyCode::F3) {
         let random_index = rng_next_usize(&mut rng);
@@ -531,9 +536,10 @@ pub(crate) fn song_select_input(
             _ => {}
         }
         if matches!(key, KeyCode::ArrowRight | KeyCode::ArrowLeft)
-            && let Some(label) = library.current_chart().map(|chart| chart.label.clone()) {
-                persist_preferred_difficulty(&mut config, &label);
-            }
+            && let Some(label) = library.current_chart().map(|chart| chart.label.clone())
+        {
+            persist_preferred_difficulty(&mut config, &label);
+        }
         changed = true;
     }
 
@@ -542,7 +548,13 @@ pub(crate) fn song_select_input(
     }
 
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        confirm_chart_play(&library, &mut current, &mut config, &mut selected, &mut next_state);
+        confirm_chart_play(
+            &library,
+            &mut current,
+            &mut config,
+            &mut selected,
+            &mut next_state,
+        );
     }
     if keyboard.just_pressed(KeyCode::Escape) {
         next_state.set(AppState::MainMenu);
@@ -613,25 +625,26 @@ pub(crate) fn update_song_preview_image(
     }
 
     if let Some(loading) = preview.loading.as_mut()
-        && let Some(result) = check_ready(&mut loading.task) {
-            let loaded_path = loading.path.clone();
-            preview.loading = None;
-            if preview.target_path.as_ref() == Some(&loaded_path) {
-                match result {
-                    Ok(image) => {
-                        preview.image = Some(images.add(image));
-                        preview.displayed_path = Some(loaded_path);
-                        preview.needs_attach = true;
-                    }
-                    Err(err) => {
-                        warn!("failed to load preview image: {err}");
-                        preview.image = None;
-                        preview.displayed_path = None;
-                        preview.needs_attach = true;
-                    }
+        && let Some(result) = check_ready(&mut loading.task)
+    {
+        let loaded_path = loading.path.clone();
+        preview.loading = None;
+        if preview.target_path.as_ref() == Some(&loaded_path) {
+            match result {
+                Ok(image) => {
+                    preview.image = Some(images.add(image));
+                    preview.displayed_path = Some(loaded_path);
+                    preview.needs_attach = true;
+                }
+                Err(err) => {
+                    warn!("failed to load preview image: {err}");
+                    preview.image = None;
+                    preview.displayed_path = None;
+                    preview.needs_attach = true;
                 }
             }
         }
+    }
 
     if !preview.needs_attach {
         return;
@@ -645,11 +658,7 @@ pub(crate) fn update_song_preview_image(
     preview.needs_attach = false;
 }
 
-fn sync_preview_frame(
-    commands: &mut Commands,
-    frame_entity: Entity,
-    preview: &SongPreviewImage,
-) {
+fn sync_preview_frame(commands: &mut Commands, frame_entity: Entity, preview: &SongPreviewImage) {
     commands.entity(frame_entity).despawn_children();
 
     if let Some(handle) = preview.image.clone() {

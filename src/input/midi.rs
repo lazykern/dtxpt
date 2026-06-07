@@ -6,6 +6,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 use midir::{Ignore, MidiInput, MidiInputConnection};
 
+use crate::util::diag;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MidiNoteEvent {
     pub device_name: String,
@@ -29,6 +31,7 @@ struct MidiThreadReceiver {
 enum MidiThreadMessage {
     Devices(Vec<String>),
     NoteOn(MidiNoteEvent),
+    Rescan { port_count: usize },
     LogInfo(String),
     LogWarn(String),
 }
@@ -70,6 +73,12 @@ fn poll_midi_thread(receiver: Res<MidiThreadReceiver>, mut midi_state: ResMut<Mi
             MidiThreadMessage::NoteOn(event) => {
                 midi_state.note_on_events.push(event);
             }
+            MidiThreadMessage::Rescan { port_count } => {
+                diag::record_midi_rescan();
+                if diag::env_diag_enabled() {
+                    debug!("MIDI rescan: {port_count} port(s)");
+                }
+            }
             MidiThreadMessage::LogInfo(message) => info!("{message}"),
             MidiThreadMessage::LogWarn(message) => warn!("{message}"),
         }
@@ -83,6 +92,9 @@ fn midi_thread_main(sender: mpsc::Sender<MidiThreadMessage>) {
 
     loop {
         let discovered = discover_midi_ports();
+        let _ = sender.send(MidiThreadMessage::Rescan {
+            port_count: discovered.len(),
+        });
         let current_keys: HashSet<_> = discovered.iter().map(|port| port.key.clone()).collect();
 
         let stale: Vec<_> = connections

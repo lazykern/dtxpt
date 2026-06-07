@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::app::markers::{LoadingScreen, MainMenuScreen, ResultScreen, SongSelectScreen};
 use crate::app::state::{AppState, OverlayState};
+use crate::audio::{stop_menu_music, update_menu_music};
 use crate::overlays::settings::setup_global;
 use crate::screens::common::cleanup_screen;
 use crate::screens::loading::{
@@ -13,7 +14,6 @@ use crate::screens::main_menu::{
 };
 use crate::screens::menu_background::{setup_menu_background, sync_menu_background_visibility};
 use crate::screens::result::{result_input, setup_result};
-use crate::audio::{stop_menu_music, update_menu_music};
 use crate::screens::song_select::{
     SongSelectUiState, persist_current_song_on_exit_song_select, poll_song_library_scan,
     refresh_song_select_ui, setup_song_select, song_select_card_interaction, song_select_input,

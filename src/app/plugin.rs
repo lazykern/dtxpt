@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 use bevy_brp_extras::BrpExtrasPlugin;
-use std::time::{Duration, Instant};
 
 use bevy::window::{MonitorSelection, PresentMode, Window, WindowMode, WindowPlugin};
-use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_kira_audio::prelude::*;
 use dtxpt::input::{InputBindings, midi};
 use dtxpt::song_library;
@@ -11,10 +9,13 @@ use dtxpt::song_library;
 use crate::app::state::{AppState, OverlayState, PauseState};
 use crate::audio::AudioFrame;
 use crate::audio::{ActiveSounds, AudioMix, GameRng, MetronomeActive};
+use crate::audio::{MenuBgmCache, MenuMusicState, MenuMusicTrack};
 use crate::config::{initial_chart_path, library_cache_path, load_game_config};
-use crate::current_song::{CurrentSong, align_library_to_current_song, enrich_current_song_from_library};
-use dtxpt::chart::resolve_chart_bgm;
+use crate::current_song::{
+    CurrentSong, align_library_to_current_song, enrich_current_song_from_library,
+};
 use crate::gameplay::clock::{ChartClock, RenderStats};
+use crate::gameplay::hotkeys::winit_settings_for_vsync;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::plugin::GameplayPlugin;
 use crate::gameplay::run::{RunState, SelectedChartPath};
@@ -22,10 +23,10 @@ use crate::overlays::plugin::OverlaysPlugin;
 use crate::overlays::settings::SettingsOverlay;
 use crate::persistence::load_score_store;
 use crate::screens::plugin::ScreensPlugin;
-use crate::audio::{MenuBgmCache, MenuMusicState, MenuMusicTrack};
 use crate::screens::song_select::SongPreviewImage;
 use crate::ui::UiPlugin;
 use crate::ui::theme::{REF_HEIGHT, REF_WIDTH};
+use dtxpt::chart::resolve_chart_bgm;
 
 pub struct DtxptPlugin;
 
@@ -37,10 +38,8 @@ impl Plugin for DtxptPlugin {
         let vsync = config.vsync;
         let score_store = load_score_store();
         let chart_path = initial_chart_path(&config);
-        let (mut song_library, song_scan) = song_library::start_library_scan(
-            &config.chart_root,
-            &library_cache_path(),
-        );
+        let (mut song_library, song_scan) =
+            song_library::start_library_scan(&config.chart_root, &library_cache_path());
         align_library_to_current_song(
             &mut song_library,
             &CurrentSong::from_path_stub(&chart_path),
@@ -49,18 +48,17 @@ impl Plugin for DtxptPlugin {
         let mut current_song = CurrentSong::from_library(&song_library)
             .unwrap_or_else(|| CurrentSong::from_path_stub(&chart_path));
         enrich_current_song_from_library(&mut current_song, &mut song_library);
-        if current_song.bgm_path.is_none() && !chart_path.is_empty()
-            && let Some(bgm) = resolve_chart_bgm(std::path::Path::new(&chart_path)) {
-                current_song.bgm_path = Some(bgm.path);
-                current_song.bgm_volume = bgm.volume;
-            }
+        if current_song.bgm_path.is_none()
+            && !chart_path.is_empty()
+            && let Some(bgm) = resolve_chart_bgm(std::path::Path::new(&chart_path))
+        {
+            current_song.bgm_path = Some(bgm.path);
+            current_song.bgm_volume = bgm.volume;
+        }
         let selected_chart = SelectedChartPath(current_song.chart_path.clone());
 
         app.insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.12)))
-            .insert_resource(WinitSettings {
-                focused_mode: UpdateMode::reactive(Duration::from_secs_f64(1.0 / 60.0)),
-                unfocused_mode: UpdateMode::reactive_low_power(Duration::from_secs_f64(1.0 / 30.0)),
-            })
+            .insert_resource(winit_settings_for_vsync(vsync))
             .insert_resource(config)
             .insert_resource(input_bindings)
             .insert_resource(audio_mix)
@@ -121,19 +119,6 @@ impl Plugin for DtxptPlugin {
             OverlaysPlugin,
             GameplayPlugin,
             BrpExtrasPlugin::default(),
-        ))
-        .add_systems(Update, cap_frame_rate);
+        ));
     }
-}
-
-fn cap_frame_rate(mut last_frame: Local<Option<Instant>>) {
-    const TARGET_FRAME: Duration = Duration::from_micros(16_667);
-    let now = Instant::now();
-    if let Some(last) = *last_frame {
-        let elapsed = now.saturating_duration_since(last);
-        if elapsed < TARGET_FRAME {
-            std::thread::sleep(TARGET_FRAME - elapsed);
-        }
-    }
-    *last_frame = Some(Instant::now());
 }

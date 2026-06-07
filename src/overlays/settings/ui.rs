@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, Window};
+use bevy::winit::WinitSettings;
 
 use dtxpt::input::lanes::LANES;
 
@@ -15,21 +16,22 @@ use crate::ui::theme::SPACING_XS;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
 
+use super::values::{apply_setting_delta, apply_vsync_setting};
 use super::{
     RebindingTarget, SettingRow, SettingsList, SettingsOverlay, SettingsScrollSync,
     SettingsUiCache, filtered_settings,
 };
-use super::values::{apply_setting_delta, apply_vsync_setting};
 
 pub fn setup_global(
     mut commands: Commands,
     config: Res<GameConfig>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut winit: ResMut<WinitSettings>,
     mut layout: ResMut<PlayfieldLayout>,
 ) {
     if let Ok(mut window) = windows.single_mut() {
         *layout = PlayfieldLayout::from_window(&window);
-        apply_vsync_setting(&mut window, config.vsync);
+        apply_vsync_setting(&mut window, Some(&mut winit), config.vsync);
     }
     commands.spawn((Camera2d, IsDefaultUiCamera));
 
@@ -168,10 +170,9 @@ pub(crate) fn refresh_settings_overlay(
                     "Rebinding {} — press key or MIDI pad (Esc cancel)",
                     LANES[lane].label
                 ),
-                RebindingTarget::System(action) => format!(
-                    "Rebinding {} — press key (Esc cancel)",
-                    action.label()
-                ),
+                RebindingTarget::System(action) => {
+                    format!("Rebinding {} — press key (Esc cancel)", action.label())
+                }
             };
             parent.spawn((
                 Text::new(prompt),
@@ -361,6 +362,7 @@ pub(crate) fn settings_row_interaction(
     mut mix: ResMut<AudioMix>,
     run: Option<ResMut<RunState>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut winit: ResMut<WinitSettings>,
     rows_query: Query<(&Interaction, &SettingsRowMarker), Changed<Interaction>>,
 ) {
     let mut run = run;
@@ -393,15 +395,21 @@ pub(crate) fn settings_row_interaction(
                 &mut mix,
                 run.as_deref_mut(),
                 Some(window.as_mut()),
+                Some(&mut winit),
             ),
-            Err(_) => {
-                apply_setting_delta(row, 1.0, &mut config, &mut mix, run.as_deref_mut(), None)
-            }
+            Err(_) => apply_setting_delta(
+                row,
+                1.0,
+                &mut config,
+                &mut mix,
+                run.as_deref_mut(),
+                None,
+                Some(&mut winit),
+            ),
         };
-        if changed
-            && let Err(err) = save_game_config(&config) {
-                warn!("failed to save config: {err}");
-            }
+        if changed && let Err(err) = save_game_config(&config) {
+            warn!("failed to save config: {err}");
+        }
         return;
     }
 }
@@ -443,7 +451,11 @@ pub(crate) fn sync_settings_list_scroll(
         &child_query,
         list_computed,
         SPACING_XS,
-        |entity| row_query.get(entity).is_ok_and(|marker| marker.index == selected),
+        |entity| {
+            row_query
+                .get(entity)
+                .is_ok_and(|marker| marker.index == selected)
+        },
         |entity| row_query.get(entity).map(|_| SPACING_XS).unwrap_or(0.0),
     ) else {
         return;

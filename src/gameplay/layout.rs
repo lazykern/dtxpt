@@ -91,6 +91,17 @@ impl PlayfieldLayout {
         REF_BASE_SCROLL_PX_PER_SEC * self.scale * lane_speed
     }
 
+    /// Chart-time span currently on screen (past fade line through top edge).
+    pub fn visible_chart_time_window(&self, elapsed: f32, lane_speed: f32) -> (f32, f32) {
+        let px_per_sec = self.scroll_px_per_sec(lane_speed);
+        if px_per_sec <= f32::EPSILON {
+            return (elapsed, elapsed);
+        }
+        let ahead = (self.window_half_h - self.judge_y).max(0.0) / px_per_sec;
+        let behind = self.note_fade_span / px_per_sec;
+        (elapsed - behind, elapsed + ahead)
+    }
+
     pub fn hud_top_left(&self) -> Vec2 {
         Vec2::new(
             -self.window_half_w + self.hud_padding,

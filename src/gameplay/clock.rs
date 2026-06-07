@@ -37,4 +37,6 @@ impl ChartClock {
 pub struct RenderStats {
     pub fps: f32,
     pub frame_ms: f32,
+    /// Unsmoothed last-frame duration for diagnostics.
+    pub raw_frame_ms: f32,
 }

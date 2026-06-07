@@ -79,16 +79,18 @@ fn scan_root(root: &Path, seen: &mut HashSet<PathBuf>, entries: &mut Vec<SongEnt
         }
 
         if let Some(set_def) = set_def
-            && let Ok(entry) = set_def_entry(&set_def, root, seen) {
-                entries.push(entry);
-                continue;
-            }
+            && let Ok(entry) = set_def_entry(&set_def, root, seen)
+        {
+            entries.push(entry);
+            continue;
+        }
 
         for path in loose_dtx {
             if seen.insert(normalize_path(&path))
-                && let Ok(entry) = loose_dtx_entry(&path, root) {
-                    entries.push(entry);
-                }
+                && let Ok(entry) = loose_dtx_entry(&path, root)
+            {
+                entries.push(entry);
+            }
         }
     }
 }
@@ -280,9 +282,10 @@ fn box_path_for(folder: &Path, root: &Path) -> Vec<String> {
             continue;
         };
         if let Ok(metadata) = read_box_metadata(&box_def)
-            && let Some(title) = metadata.title.filter(|title| !title.is_empty()) {
-                boxes.push(title);
-            }
+            && let Some(title) = metadata.title.filter(|title| !title.is_empty())
+        {
+            boxes.push(title);
+        }
     }
     boxes
 }

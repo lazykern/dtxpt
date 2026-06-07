@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 
-use crate::input::lanes::{
-    LANE_BD, LANE_CY, LANE_FT, LANE_HH, LANE_HT, LANE_LC, LANE_LP, LANE_LT, LANE_RD, LANE_SD,
-};
+use super::keycodes::keycode_from_name;
 use super::types::{
     BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig, InputSourceConfig,
     LANE_COUNT, MidiDeviceFilter, SystemAction,
 };
-use super::keycodes::keycode_from_name;
+use crate::input::lanes::{
+    LANE_BD, LANE_CY, LANE_FT, LANE_HH, LANE_HT, LANE_LC, LANE_LP, LANE_LT, LANE_RD, LANE_SD,
+};
 
 pub fn default_lane_key_names() -> [String; LANE_COUNT] {
     std::array::from_fn(|lane| DEFAULT_LANE_KEY_NAMES[lane].to_string())
@@ -60,9 +60,7 @@ pub fn default_input_bindings_with_lane_keys(
 
     for (lane, key) in lane_keys.iter().enumerate() {
         bindings.push(InputBindingConfig {
-            source: InputSourceConfig::Keyboard {
-                key: key.clone(),
-            },
+            source: InputSourceConfig::Keyboard { key: key.clone() },
             target: BindingTarget::DrumLane(DrumLane::from_index(lane).expect("valid lane")),
         });
     }

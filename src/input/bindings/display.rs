@@ -1,12 +1,15 @@
 use bevy::prelude::*;
 
+use super::keycodes::{keycode_display_name, keycode_from_name};
+use super::mutate::keyboard_key_for_action;
 use super::types::{
     BindingTarget, DrumLane, InputBindingConfig, InputSourceConfig, MidiDeviceFilter, SystemAction,
 };
-use super::keycodes::{keycode_display_name, keycode_from_name};
-use super::mutate::keyboard_key_for_action;
 
-pub fn system_action_binding_value(bindings: &[InputBindingConfig], action: SystemAction) -> String {
+pub fn system_action_binding_value(
+    bindings: &[InputBindingConfig],
+    action: SystemAction,
+) -> String {
     keyboard_key_for_action(bindings, action)
         .map(|key| keycode_display_name(key).to_string())
         .unwrap_or_else(|| "—".to_string())

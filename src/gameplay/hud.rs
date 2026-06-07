@@ -5,9 +5,10 @@ use bevy::window::{PrimaryWindow, Window};
 
 use crate::app::markers::*;
 use crate::app::state::{PauseState, is_paused};
-use crate::audio::AudioMix;
+use crate::audio::{ActiveSounds, AudioMix, BackgroundDecodeReceiver, count_tracked_live_voices};
 use crate::gameplay::clock::{ChartClock, RenderStats};
 use crate::gameplay::constants::FRAME_STATS_SMOOTHING;
+use crate::gameplay::diagnostics::PlaybackDiagnostics;
 use crate::gameplay::gauge::gauge_fill_color;
 use crate::gameplay::hotkeys::present_mode_has_vsync;
 use crate::gameplay::layout::PlayfieldLayout;
@@ -44,6 +45,7 @@ pub fn update_render_stats(time: Res<Time>, mut stats: ResMut<RenderStats>) {
 
     let fps = 1.0 / dt;
     let frame_ms = dt * 1000.0;
+    stats.raw_frame_ms = frame_ms;
     if stats.fps == 0.0 {
         stats.fps = fps;
         stats.frame_ms = frame_ms;
@@ -82,6 +84,10 @@ pub(crate) fn update_hud(
     mix: Res<AudioMix>,
     stats: Res<RenderStats>,
     layout: Res<PlayfieldLayout>,
+    playback_diag: Res<PlaybackDiagnostics>,
+    active: Res<ActiveSounds>,
+    decode: Option<Res<BackgroundDecodeReceiver>>,
+    audio_instances: Res<Assets<bevy_kira_audio::prelude::AudioInstance>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut cache: ResMut<HudDisplayCache>,
     mut hud_text: ParamSet<(
@@ -160,8 +166,11 @@ pub(crate) fn update_hud(
         "n/a".to_string()
     };
 
+    let live_voices = count_tracked_live_voices(&active, &audio_instances);
+    let pending_decode = decode.as_ref().map(|r| r.pending).unwrap_or(0);
+
     let debug_text = format!(
-        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Present {}  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms",
+        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Present {}  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms\nDiag spikes={} peak={:.1}ms metro={} preempt={} despawn={} decode={} midi={} voices={live_voices} decode_pending={pending_decode}",
         chart.title,
         chart.source,
         run.play_mode.label(),
@@ -197,6 +206,13 @@ pub(crate) fn update_hud(
         clock.audio_step_ms,
         clock.visual_drift_ms,
         clock.visual_correction_ms,
+        playback_diag.frame_spikes,
+        playback_diag.peak_frame_ms,
+        playback_diag.metronome_beats,
+        playback_diag.voice_preempts,
+        playback_diag.metro_line_despawns,
+        playback_diag.bg_decode_merges,
+        playback_diag.midi_rescans,
     );
     if let Ok(mut text) = hud_text.p5().single_mut() {
         set_text_if_changed(&mut text, &mut cache.debug_text, debug_text);

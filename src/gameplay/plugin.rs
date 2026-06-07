@@ -4,8 +4,10 @@ use crate::app::state::{AppState, PauseState, overlay_closed};
 use crate::audio::{
     adjust_audio_mix, adjust_song_playback_rate, advance_audio_frame, check_song_finished,
     cleanup_active_sounds, merge_decoded_audio, playback_transport, restart_on_gesture,
-    schedule_auto_se,
-    schedule_metronome, sync_elapsed_from_audio,
+    schedule_auto_se, schedule_metronome, sync_elapsed_from_audio,
+};
+use crate::gameplay::diagnostics::{
+    PlaybackDiagnostics, monitor_playback_diagnostics, reset_playback_diagnostics,
 };
 use crate::gameplay::gauge::update_gauge_bar;
 use crate::gameplay::hotkeys::toggle_hotkeys;
@@ -25,7 +27,7 @@ use crate::gameplay::rendering::playfield_viz::{
 use crate::gameplay::scoring::finish_to_result;
 use crate::gameplay::setup::{cleanup_gameplay, setup_gameplay};
 use crate::overlays::pause::{
-    pause_input, sync_pause_focus, toggle_playback_pause, update_pause_overlay, PauseUiState,
+    PauseUiState, pause_input, sync_pause_focus, toggle_playback_pause, update_pause_overlay,
 };
 use crate::overlays::settings::persist_runtime_config;
 
@@ -33,10 +35,12 @@ pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<crate::audio::RestartGestureState>()
+        app.init_resource::<PlaybackDiagnostics>()
+            .init_resource::<crate::audio::RestartGestureState>()
             .init_resource::<PauseUiState>()
             .init_resource::<HudDisplayCache>()
             .add_systems(OnEnter(AppState::Playing), setup_gameplay)
+            .add_systems(OnEnter(AppState::Playing), reset_playback_diagnostics)
             .add_systems(
                 OnEnter(AppState::Playing),
                 |mut next: ResMut<NextState<PauseState>>| next.set(PauseState::Running),
@@ -68,7 +72,9 @@ impl Plugin for GameplayPlugin {
                         .after(toggle_playback_pause)
                         .run_if(overlay_closed),
                     update_pause_overlay.after(playback_transport),
-                    pause_input.after(update_pause_overlay).run_if(overlay_closed),
+                    pause_input
+                        .after(update_pause_overlay)
+                        .run_if(overlay_closed),
                     sync_pause_focus.after(pause_input),
                     toggle_hotkeys
                         .after(sync_pause_focus)
@@ -105,8 +111,9 @@ impl Plugin for GameplayPlugin {
                     update_lane_receptor_flashes,
                     crate::gameplay::rendering::keyboard_viz::update_key_cap_flashes,
                     update_render_stats.after(sync_elapsed_from_audio),
+                    monitor_playback_diagnostics.after(update_render_stats),
                     sync_debug_hud_visibility,
-                    update_hud.after(update_render_stats),
+                    update_hud.after(monitor_playback_diagnostics),
                     update_gauge_bar.after(apply_playfield_layout),
                     update_judgement_text,
                 )

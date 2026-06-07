@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 
-use crate::input::midi::MidiNoteEvent;
+use super::keycodes::keycode_from_name;
 use super::types::{
     BindingTarget, DrumLane, InputBinding, InputBindingConfig, InputSource, InputSourceConfig,
     SystemAction,
 };
-use super::keycodes::keycode_from_name;
+use crate::input::midi::MidiNoteEvent;
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Default)]
 pub struct InputBindings {

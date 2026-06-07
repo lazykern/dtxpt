@@ -6,6 +6,7 @@ use dtxpt::input::lanes::{
     DTX_CH_HH_CLOSE, DTX_CH_HH_OPEN, DTX_CH_LP, DTX_CH_SE_HH, HH_TRACKED_WAV_CAP, LANES,
     POLYPHONIC_VOICES,
 };
+use dtxpt::util::diag;
 
 use super::super::mix::*;
 use super::super::sound_bank::*;
@@ -32,6 +33,19 @@ pub(crate) fn collect_active_drum_handles(active: &ActiveSounds) -> Vec<Handle<A
         }
     }
     handles
+}
+
+pub(crate) fn count_tracked_live_voices(
+    active: &ActiveSounds,
+    audio_instances: &Assets<AudioInstance>,
+) -> usize {
+    active
+        .voice_pools
+        .values()
+        .flat_map(|voices| voices.slots.iter())
+        .flatten()
+        .filter(|tracked| is_audio_instance_active(&tracked.handle, audio_instances))
+        .count()
 }
 
 pub(crate) fn stop_active_drums(
@@ -77,7 +91,10 @@ pub(crate) fn resume_active_drums(
     }
 }
 
-pub(crate) fn next_voice_pool_slot(voices: &mut super::state::WavVoices, max_voices: usize) -> usize {
+pub(crate) fn next_voice_pool_slot(
+    voices: &mut super::state::WavVoices,
+    max_voices: usize,
+) -> usize {
     let max_voices = max_voices.clamp(1, POLYPHONIC_VOICES);
     let slot = voices.next % max_voices;
     voices.next = (slot + 1) % max_voices;
@@ -257,6 +274,13 @@ pub(crate) fn play_wav(
         if let Some(previous) = assign_voice_pool_slot(voices, slot, instance_handle.clone(), frame)
             && let Some(inst) = audio_instances.get_mut(&previous.handle)
         {
+            crate::gameplay::diagnostics::record_voice_preempt();
+            if diag::env_diag_enabled() {
+                debug!(
+                    "voice preempt wav={wav_id:02X} role={:?} slot={slot}",
+                    wav.role
+                );
+            }
             inst.stop(instant_audio_tween());
         }
     }
@@ -372,12 +396,9 @@ fn is_audio_instance_active(
     handle: &Handle<AudioInstance>,
     audio_instances: &Assets<AudioInstance>,
 ) -> bool {
-    audio_instances.get(handle).is_some_and(|inst| {
-        !matches!(
-            inst.state(),
-            bevy_kira_audio::PlaybackState::Stopped
-        )
-    })
+    audio_instances
+        .get(handle)
+        .is_some_and(|inst| !matches!(inst.state(), bevy_kira_audio::PlaybackState::Stopped))
 }
 
 #[cfg(test)]
@@ -388,7 +409,11 @@ mod tests {
     fn lp_chokes_hh_only_when_muting_enabled() {
         assert!(should_choke_hh(DTX_CH_LP, Some(DTX_CH_HH_CLOSE), true));
         assert!(!should_choke_hh(DTX_CH_LP, Some(DTX_CH_HH_CLOSE), false));
-        assert!(should_choke_hh(DTX_CH_HH_CLOSE, Some(DTX_CH_HH_CLOSE), false));
+        assert!(should_choke_hh(
+            DTX_CH_HH_CLOSE,
+            Some(DTX_CH_HH_CLOSE),
+            false
+        ));
     }
 
     #[test]

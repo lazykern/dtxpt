@@ -2,8 +2,8 @@ use bevy::{asset::Handle, prelude::*};
 use bevy_kira_audio::prelude::*;
 
 use dtxpt::chart::{
-    Chart, ChartTiming, clamp_chart_time, reconcile_notes_for_restart, reconcile_notes_for_seek,
-    reconcile_scheduled_for_time, reconcile_metronome_for_time,
+    Chart, ChartTiming, clamp_chart_time, reconcile_metronome_for_time,
+    reconcile_notes_for_restart, reconcile_notes_for_seek, reconcile_scheduled_for_time,
 };
 use dtxpt::input::SystemAction;
 
@@ -13,8 +13,7 @@ use crate::gameplay::clock::ChartClock;
 use crate::gameplay::constants::*;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::live_tuning::action_allowed_during_play;
-use crate::gameplay::metronome::spawn_metronome_lines;
-use crate::gameplay::rendering::notes::{despawn_note_visuals, spawn_note_visuals};
+use crate::gameplay::rendering::notes::{PlayfieldVisualStreams, despawn_note_visuals};
 use crate::gameplay::run::RunState;
 
 use super::super::mix::*;
@@ -24,7 +23,9 @@ use super::state::{
     ActiveSounds, AudioFrame, BgmInstance, BoundInput, MetronomeActive, PlaybackAudio,
     RestartResume,
 };
-use super::voices::{log_active_audio_snapshot, pause_active_drums, resume_active_drums, stop_active_drums};
+use super::voices::{
+    log_active_audio_snapshot, pause_active_drums, resume_active_drums, stop_active_drums,
+};
 
 pub(crate) fn adjust_audio_mix(
     input: BoundInput,
@@ -69,12 +70,13 @@ pub(crate) fn adjust_audio_mix(
     );
 
     if let Some(bgm) = bgm
-        && let Some(inst) = audio_instances.get_mut(&bgm.handle) {
-            inst.set_decibels(
-                mix.volume_db(bgm.dtx_volume, MixKind::Bgm),
-                instant_audio_tween(),
-            );
-        }
+        && let Some(inst) = audio_instances.get_mut(&bgm.handle)
+    {
+        inst.set_decibels(
+            mix.volume_db(bgm.dtx_volume, MixKind::Bgm),
+            instant_audio_tween(),
+        );
+    }
 }
 
 pub(crate) fn sync_elapsed_from_audio(
@@ -91,42 +93,39 @@ pub(crate) fn sync_elapsed_from_audio(
 
     let frame_dt = time.delta_secs();
     let previous_audio = clock.audio_elapsed;
-    let next_audio = if let Some(ref bgm) = bgm_instance {
+    let dt_advance = frame_dt * run.song_playback_rate;
+    let mut next_audio = previous_audio + dt_advance;
+
+    if let Some(ref bgm) = bgm_instance {
         if let Some(pos) = audio_instances
             .get(&bgm.handle)
             .and_then(|inst| inst.state().position())
         {
-            // BGM audio position + scheduled BGM chip time = raw chart clock.
-            bgm.start_time + pos as f32
-        } else {
-            // Fallback: still queued, advance smoothly.
-            previous_audio + frame_dt * run.song_playback_rate
+            let measured = bgm.start_time + pos as f32;
+            if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
+                let drift = measured - next_audio;
+                let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
+                let correction = (drift * catchup)
+                    .clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
+                next_audio += correction;
+            }
         }
-    } else {
-        previous_audio + frame_dt * run.song_playback_rate
-    };
+    }
 
     clock.audio_elapsed = next_audio;
     clock.audio_step_ms = (clock.audio_elapsed - previous_audio) * 1000.0;
     clock.judgement_elapsed = clock.audio_elapsed + run.timing_offset;
 
     let target_visual = clock.judgement_elapsed;
-    let visual_correction =
-        if (target_visual - clock.visual_elapsed).abs() > VISUAL_SNAP_THRESHOLD_SECS {
-            let correction = target_visual - clock.visual_elapsed;
-            clock.visual_elapsed = target_visual;
-            correction
-        } else {
-            clock.visual_elapsed += frame_dt;
-            let drift = target_visual - clock.visual_elapsed;
-            let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
-            let correction = drift * catchup;
-            clock.visual_elapsed += correction;
-            correction
-        };
+    clock.visual_elapsed += frame_dt * run.song_playback_rate;
+    let drift = target_visual - clock.visual_elapsed;
+    let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
+    let mut correction = drift * catchup;
+    correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
+    clock.visual_elapsed += correction;
 
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
-    clock.visual_correction_ms = visual_correction * 1000.0;
+    clock.visual_correction_ms = correction * 1000.0;
 
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
@@ -165,16 +164,18 @@ pub(crate) fn set_playback_paused(
 ) {
     if paused {
         if let Some(handle) = bgm
-            && let Some(instance) = audio_instances.get_mut(handle) {
-                instance.pause(instant_audio_tween());
-            }
+            && let Some(instance) = audio_instances.get_mut(handle)
+        {
+            instance.pause(instant_audio_tween());
+        }
         pause_active_drums(audio_instances, active);
         stop_metronome_instances(metronome_active, audio_instances);
     } else {
         if let Some(handle) = bgm
-            && let Some(instance) = audio_instances.get_mut(handle) {
-                instance.resume(instant_audio_tween());
-            }
+            && let Some(instance) = audio_instances.get_mut(handle)
+        {
+            instance.resume(instant_audio_tween());
+        }
         resume_active_drums(audio_instances, active);
     }
 }
@@ -197,6 +198,7 @@ pub(crate) fn respawn_playfield_visuals(
     layout: &PlayfieldLayout,
     clock: &ChartClock,
     run: &RunState,
+    streams: &mut PlayfieldVisualStreams,
     visuals: &mut ParamSet<(
         Query<Entity, With<NoteVisual>>,
         Query<Entity, With<MetronomeLineVisual>>,
@@ -206,8 +208,17 @@ pub(crate) fn respawn_playfield_visuals(
     for entity in visuals.p1().iter().collect::<Vec<_>>() {
         commands.entity(entity).despawn();
     }
-    spawn_metronome_lines(commands, chart, layout, clock, run);
-    spawn_note_visuals(commands, chart, layout, clock, run);
+    let (min_time, max_time) =
+        layout.visible_chart_time_window(clock.visual_elapsed, run.lane_speed);
+    streams.metronome.reset();
+    streams
+        .metronome
+        .align_to_time(&chart.metronome_beats, min_time);
+    streams.notes.reset();
+    streams.notes.align_to_time(&chart.notes, min_time);
+    streams
+        .notes
+        .spawn_visible_through(commands, &chart.notes, layout, clock, run, max_time);
 }
 
 pub(crate) fn seek_playback_to_time(
@@ -222,6 +233,7 @@ pub(crate) fn seek_playback_to_time(
     bgm_instance: Option<Res<BgmInstance>>,
     active: &mut ActiveSounds,
     metronome_active: &mut MetronomeActive,
+    streams: &mut PlayfieldVisualStreams,
     sound_bank: &SoundBank,
     mix: &AudioMix,
     audio: &Audio,
@@ -256,7 +268,7 @@ pub(crate) fn seek_playback_to_time(
         );
     }
     run.finished = false;
-    respawn_playfield_visuals(commands, chart, layout, clock, run, visuals);
+    respawn_playfield_visuals(commands, chart, layout, clock, run, streams, visuals);
     info!(
         "seek complete target={:.3}s elapsed={:.3}s",
         target, run.elapsed
@@ -273,6 +285,7 @@ pub(crate) fn restart_playback(
     bgm_instance: Option<Res<BgmInstance>>,
     active: &mut ActiveSounds,
     metronome_active: &mut MetronomeActive,
+    streams: &mut PlayfieldVisualStreams,
     visuals: &mut ParamSet<(
         Query<Entity, With<NoteVisual>>,
         Query<Entity, With<MetronomeLineVisual>>,
@@ -314,7 +327,7 @@ pub(crate) fn restart_playback(
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
 
-    respawn_playfield_visuals(commands, chart, layout, clock, run, visuals);
+    respawn_playfield_visuals(commands, chart, layout, clock, run, streams, visuals);
     info!(
         "restart complete; notes reset={} scheduled_audio reset={}",
         chart.notes.len(),
@@ -356,12 +369,13 @@ fn restart_gesture_triggered(
 
     if any_just_pressed {
         if let Some(last) = state.last_tap_at
-            && now - last <= RESTART_DOUBLE_TAP_SECS {
-                state.last_tap_at = None;
-                state.hold_started_at = None;
-                state.hold_fired = false;
-                return true;
-            }
+            && now - last <= RESTART_DOUBLE_TAP_SECS
+        {
+            state.last_tap_at = None;
+            state.hold_started_at = None;
+            state.hold_fired = false;
+            return true;
+        }
         state.last_tap_at = Some(now);
         state.hold_started_at = Some(now);
         state.hold_fired = false;
@@ -369,11 +383,13 @@ fn restart_gesture_triggered(
 
     if any_pressed {
         if let Some(started) = state.hold_started_at
-            && !state.hold_fired && now - started >= RESTART_HOLD_SECS {
-                state.hold_fired = true;
-                state.last_tap_at = None;
-                return true;
-            }
+            && !state.hold_fired
+            && now - started >= RESTART_HOLD_SECS
+        {
+            state.hold_fired = true;
+            state.last_tap_at = None;
+            return true;
+        }
     } else {
         state.hold_started_at = None;
         state.hold_fired = false;
@@ -396,6 +412,7 @@ pub(crate) fn restart_on_gesture(
     bgm_instance: Option<Res<BgmInstance>>,
     mut active: ResMut<ActiveSounds>,
     mut metronome_active: ResMut<MetronomeActive>,
+    mut streams: ResMut<PlayfieldVisualStreams>,
     mut visuals: ParamSet<(
         Query<Entity, With<NoteVisual>>,
         Query<Entity, With<MetronomeLineVisual>>,
@@ -424,6 +441,7 @@ pub(crate) fn restart_on_gesture(
         bgm_instance,
         &mut active,
         &mut metronome_active,
+        &mut streams,
         &mut visuals,
     );
 
@@ -487,13 +505,14 @@ pub(crate) fn adjust_song_playback_rate(
     }
 
     if let Some(bgm) = bgm_instance
-        && let Some(instance) = audio_instances.get_mut(&bgm.handle) {
-            if let Some(rate) = combined_playback_rate(run.song_playback_rate, None) {
-                instance.set_playback_rate(rate, instant_audio_tween());
-            } else {
-                instance.set_playback_rate(1.0, instant_audio_tween());
-            }
+        && let Some(instance) = audio_instances.get_mut(&bgm.handle)
+    {
+        if let Some(rate) = combined_playback_rate(run.song_playback_rate, None) {
+            instance.set_playback_rate(rate, instant_audio_tween());
+        } else {
+            instance.set_playback_rate(1.0, instant_audio_tween());
         }
+    }
 
     info!("song playback rate set to {:.2}x", run.song_playback_rate);
 }
@@ -511,6 +530,7 @@ pub(crate) fn playback_transport(
     bgm_instance: Option<Res<BgmInstance>>,
     mut active: ResMut<ActiveSounds>,
     mut metronome_active: ResMut<MetronomeActive>,
+    mut streams: ResMut<PlayfieldVisualStreams>,
     playback_audio: PlaybackAudio,
     frame: Res<AudioFrame>,
     mut visuals: ParamSet<(
@@ -575,6 +595,7 @@ pub(crate) fn playback_transport(
             bgm_instance,
             &mut active,
             &mut metronome_active,
+            &mut streams,
             &playback_audio.sound_bank,
             &playback_audio.mix,
             &playback_audio.audio,

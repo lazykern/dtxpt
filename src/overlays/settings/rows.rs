@@ -1,5 +1,5 @@
 use dtxpt::input::lanes::LANES;
-use dtxpt::input::{PlayMode, SystemAction, SYSTEM_ACTION_SETTINGS_ORDER};
+use dtxpt::input::{PlayMode, SYSTEM_ACTION_SETTINGS_ORDER, SystemAction};
 
 use crate::audio::AudioMix;
 use crate::config::GameConfig;
@@ -7,9 +7,7 @@ use crate::gameplay::constants::*;
 use crate::gameplay::live_tuning::{
     play_mode_change_allowed_during_play, song_rate_change_allowed_during_play,
 };
-use dtxpt::input::{
-    keyboard_summary_for_lane, lane_bindings_value, system_action_binding_value,
-};
+use dtxpt::input::{keyboard_summary_for_lane, lane_bindings_value, system_action_binding_value};
 
 use super::SettingsOverlay;
 
@@ -212,9 +210,7 @@ impl SettingRow {
             SettingRow::MasterVolume => Some(mix.master),
             SettingRow::BgmVolume => Some(mix.bgm),
             SettingRow::DrumVolume => Some(mix.drums),
-            SettingRow::TimingOffset => {
-                Some(((config.timing_offset + 0.5) / 1.0).clamp(0.0, 1.0))
-            }
+            SettingRow::TimingOffset => Some(((config.timing_offset + 0.5) / 1.0).clamp(0.0, 1.0)),
             SettingRow::LaneSpeed => Some(
                 ((config.lane_speed - MIN_LANE_SPEED) / (MAX_LANE_SPEED - MIN_LANE_SPEED))
                     .clamp(0.0, 1.0),
@@ -258,7 +254,9 @@ impl SettingRow {
             SettingRow::MasterVolume => "Global output level.",
             SettingRow::BgmVolume => "Song backing track level.",
             SettingRow::DrumVolume => "Drum hit and auto-SE level.",
-            SettingRow::PlayMode => "Normal or Practice. Locked mid-chart — choose before starting.",
+            SettingRow::PlayMode => {
+                "Normal or Practice. Locked mid-chart — choose before starting."
+            }
             SettingRow::LaneSpeed => "Note scroll speed. Applies immediately during play.",
             SettingRow::LaneKey(_) => {
                 "Lane bindings. Enter adds key or MIDI pad. ←/→ select binding. Backspace/Delete removes selected."
@@ -312,11 +310,9 @@ impl SettingRow {
             SettingRow::HitSoundPriorityCymbal => config.hit_sound_priority_cy.label().to_string(),
             SettingRow::HitSoundPriorityBd => config.hit_sound_priority_lp.label().to_string(),
             SettingRow::LaneSpeed => format!("{:.2}x", config.lane_speed),
-            SettingRow::LaneKey(lane) => lane_bindings_value(
-                &config.bindings,
-                lane,
-                Some(overlay.lane_binding_cursor),
-            ),
+            SettingRow::LaneKey(lane) => {
+                lane_bindings_value(&config.bindings, lane, Some(overlay.lane_binding_cursor))
+            }
             SettingRow::SystemAction(action) => {
                 system_action_binding_value(&config.bindings, action)
             }

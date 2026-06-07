@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 
-use crate::input::lanes::LANE_BD;
-use crate::input::lanes;
 use super::{
-    BindingTarget, DrumLane, InputBindingConfig, InputSourceConfig, MidiDeviceFilter,
-    SystemAction, add_keyboard_lane_binding, add_midi_lane_binding, default_input_bindings,
+    BindingTarget, DrumLane, InputBindingConfig, InputSourceConfig, MidiDeviceFilter, SystemAction,
+    add_keyboard_lane_binding, add_midi_lane_binding, default_input_bindings,
     keyboard_key_for_action, keyboard_keys_for_lane_config, lane_binding_indices,
     remove_lane_binding_at, set_system_keyboard_binding,
 };
+use crate::input::lanes;
+use crate::input::lanes::LANE_BD;
 
 #[test]
 fn default_bindings_include_keyboard_and_midi() {
@@ -45,17 +45,19 @@ fn add_midi_lane_binding_is_device_specific() {
     let mut bindings = default_input_bindings();
     add_midi_lane_binding(&mut bindings, LANE_BD, "Roland TD-17", 9, 36).unwrap();
 
-    let has_specific = bindings.iter().any(|binding| matches!(
-        binding,
-        InputBindingConfig {
-            source: InputSourceConfig::MidiNote {
-                device: MidiDeviceFilter::Name(name),
-                note: 36,
-                channel: Some(9),
-            },
-            target: BindingTarget::DrumLane(DrumLane::Bd),
-        } if name == "Roland TD-17"
-    ));
+    let has_specific = bindings.iter().any(|binding| {
+        matches!(
+            binding,
+            InputBindingConfig {
+                source: InputSourceConfig::MidiNote {
+                    device: MidiDeviceFilter::Name(name),
+                    note: 36,
+                    channel: Some(9),
+                },
+                target: BindingTarget::DrumLane(DrumLane::Bd),
+            } if name == "Roland TD-17"
+        )
+    });
     assert!(has_specific);
 }
 
@@ -82,8 +84,7 @@ fn default_bindings_use_escape_pause_and_backquote_restart() {
 #[test]
 fn set_system_keyboard_binding_replaces_action_key() {
     let mut bindings = default_input_bindings();
-    set_system_keyboard_binding(&mut bindings, SystemAction::PauseToggle, KeyCode::KeyP)
-        .unwrap();
+    set_system_keyboard_binding(&mut bindings, SystemAction::PauseToggle, KeyCode::KeyP).unwrap();
 
     assert_eq!(
         keyboard_key_for_action(&bindings, SystemAction::PauseToggle),

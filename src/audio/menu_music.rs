@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
-use bevy_kira_audio::prelude::*;
 use bevy_kira_audio::AudioSource;
+use bevy_kira_audio::prelude::*;
 use kira::sound::static_sound::StaticSoundData;
 
 use crate::audio::{AudioMix, MixKind, menu_fade_in_tween, menu_fade_out_tween};
@@ -128,7 +128,9 @@ pub fn update_menu_music(
     }
 
     state.debounce.tick(time.delta());
-    if !state.debounce.is_finished() || state.playing_path == state.pending_path || state.loading.is_some()
+    if !state.debounce.is_finished()
+        || state.playing_path == state.pending_path
+        || state.loading.is_some()
     {
         return;
     }

@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::{PresentMode, Window};
+use bevy::winit::WinitSettings;
 
 use dtxpt::input::{InputBindings, MidiInputState, PlayMode, SystemAction};
 
@@ -7,16 +8,24 @@ use crate::app::state::{AppState, OverlayState, PauseState, is_paused};
 use crate::audio::AudioMix;
 use crate::config::{GameConfig, HitSoundPriority};
 use crate::gameplay::constants::*;
+use crate::gameplay::hotkeys::winit_settings_for_vsync;
 use crate::gameplay::run::RunState;
 
 use super::rows::SettingRow;
 
-pub(crate) fn apply_vsync_setting(window: &mut Window, enabled: bool) {
+pub(crate) fn apply_vsync_setting(
+    window: &mut Window,
+    winit: Option<&mut WinitSettings>,
+    enabled: bool,
+) {
     window.present_mode = if enabled {
         PresentMode::AutoVsync
     } else {
         PresentMode::AutoNoVsync
     };
+    if let Some(winit) = winit {
+        *winit = winit_settings_for_vsync(enabled);
+    }
 }
 
 pub(crate) fn apply_setting_delta(
@@ -26,6 +35,7 @@ pub(crate) fn apply_setting_delta(
     mix: &mut AudioMix,
     run: Option<&mut RunState>,
     window: Option<&mut Window>,
+    winit: Option<&mut WinitSettings>,
 ) -> bool {
     if delta == 0.0 || !row.live_adjustable(run.as_deref().map(|run| run.play_mode)) {
         return false;
@@ -87,7 +97,9 @@ pub(crate) fn apply_setting_delta(
         SettingRow::Vsync => {
             config.vsync = !config.vsync;
             if let Some(window) = window {
-                apply_vsync_setting(window, config.vsync);
+                apply_vsync_setting(window, winit, config.vsync);
+            } else if let Some(winit) = winit {
+                *winit = winit_settings_for_vsync(config.vsync);
             }
         }
         SettingRow::MetronomeSound => {
@@ -109,25 +121,29 @@ pub(crate) fn apply_setting_delta(
             }
         }
         SettingRow::HitSoundPriorityHh => {
-            config.hit_sound_priority_hh = cycle_hit_sound_priority(config.hit_sound_priority_hh, delta);
+            config.hit_sound_priority_hh =
+                cycle_hit_sound_priority(config.hit_sound_priority_hh, delta);
             if let Some(run) = run {
                 run.hit_sound_priority_hh = config.hit_sound_priority_hh;
             }
         }
         SettingRow::HitSoundPriorityTom => {
-            config.hit_sound_priority_ft = cycle_hit_sound_priority(config.hit_sound_priority_ft, delta);
+            config.hit_sound_priority_ft =
+                cycle_hit_sound_priority(config.hit_sound_priority_ft, delta);
             if let Some(run) = run {
                 run.hit_sound_priority_ft = config.hit_sound_priority_ft;
             }
         }
         SettingRow::HitSoundPriorityCymbal => {
-            config.hit_sound_priority_cy = cycle_hit_sound_priority(config.hit_sound_priority_cy, delta);
+            config.hit_sound_priority_cy =
+                cycle_hit_sound_priority(config.hit_sound_priority_cy, delta);
             if let Some(run) = run {
                 run.hit_sound_priority_cy = config.hit_sound_priority_cy;
             }
         }
         SettingRow::HitSoundPriorityBd => {
-            config.hit_sound_priority_lp = cycle_hit_sound_priority(config.hit_sound_priority_lp, delta);
+            config.hit_sound_priority_lp =
+                cycle_hit_sound_priority(config.hit_sound_priority_lp, delta);
             if let Some(run) = run {
                 run.hit_sound_priority_lp = config.hit_sound_priority_lp;
             }

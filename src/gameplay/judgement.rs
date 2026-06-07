@@ -4,6 +4,7 @@ use bevy_kira_audio::prelude::*;
 use crate::app::markers::{LaneReceptor, LaneReceptorFlash};
 use crate::app::state::{PauseState, is_paused};
 use crate::audio::*;
+use crate::config::HitSoundPriority;
 use crate::gameplay::clock::ChartClock;
 use crate::gameplay::constants::*;
 use crate::gameplay::gauge::apply_gauge;
@@ -15,7 +16,6 @@ use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete};
 use dtxpt::input::lanes::{
     PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
 };
-use crate::config::HitSoundPriority;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_lane_hit(

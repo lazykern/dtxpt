@@ -170,31 +170,33 @@ impl SystemAction {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::ToggleSettings => "Open or close the settings overlay (while paused in gameplay).",
-            Self::PauseToggle => "Pause or resume gameplay.",
-            Self::RestartChart => {
-                "Restart chart. Double-tap or hold the bound key (default `)."
+            Self::ToggleSettings => {
+                "Open or close the settings overlay (while paused in gameplay)."
             }
-            Self::SeekForward => "Seek playback forward five seconds. Practice mode only during play.",
+            Self::PauseToggle => "Pause or resume gameplay.",
+            Self::RestartChart => "Restart chart. Double-tap or hold the bound key (default `).",
+            Self::SeekForward => {
+                "Seek playback forward five seconds. Practice mode only during play."
+            }
             Self::SeekBackward => {
                 "Seek playback backward five seconds. Practice mode only during play."
             }
             Self::SeekToPreviousMeasure => {
                 "Seek to the start of the chart. Practice mode only during play."
             }
-            Self::SeekToNextMeasure => "Seek to the end of the chart. Practice mode only during play.",
-            Self::IncreaseTimingOffset
-            | Self::DecreaseTimingOffset
-            | Self::ResetTimingOffset => "Adjust persisted timing offset during play.",
-            Self::IncreaseLaneSpeed
-            | Self::DecreaseLaneSpeed
-            | Self::ResetLaneSpeed => "Adjust persisted lane scroll speed during play.",
+            Self::SeekToNextMeasure => {
+                "Seek to the end of the chart. Practice mode only during play."
+            }
+            Self::IncreaseTimingOffset | Self::DecreaseTimingOffset | Self::ResetTimingOffset => {
+                "Adjust persisted timing offset during play."
+            }
+            Self::IncreaseLaneSpeed | Self::DecreaseLaneSpeed | Self::ResetLaneSpeed => {
+                "Adjust persisted lane scroll speed during play."
+            }
             Self::IncreaseMasterVolume | Self::DecreaseMasterVolume => {
                 "Adjust master output volume during play."
             }
-            Self::IncreaseBgmVolume | Self::DecreaseBgmVolume => {
-                "Adjust BGM volume during play."
-            }
+            Self::IncreaseBgmVolume | Self::DecreaseBgmVolume => "Adjust BGM volume during play.",
             Self::IncreaseDrumVolume | Self::DecreaseDrumVolume => {
                 "Adjust drum hit volume during play."
             }

@@ -12,11 +12,11 @@ use dtxpt::input::lanes::LANES;
 use crate::app::markers::*;
 use crate::audio::*;
 use crate::gameplay::clock::*;
+use crate::gameplay::hud::HudDisplayCache;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::keyboard_viz;
-use crate::gameplay::run::*;
-use crate::gameplay::hud::HudDisplayCache;
 use crate::gameplay::rendering::playfield_viz::lane_receptor_color;
+use crate::gameplay::run::*;
 use crate::ui::fonts::{UiFonts, text_font};
 use crate::ui::palette::*;
 use crate::ui::theme::{
@@ -25,8 +25,8 @@ use crate::ui::theme::{
 use crate::ui::widgets::screen_root;
 
 use crate::gameplay::gauge::spawn_gauge_bar;
-use crate::gameplay::rendering::notes::spawn_note_visuals;
-use crate::gameplay::metronome::{make_metronome_click, spawn_metronome_lines};
+use crate::gameplay::metronome::make_metronome_click;
+use crate::gameplay::rendering::notes::PlayfieldVisualStreams;
 
 pub fn setup_gameplay(
     mut commands: Commands,
@@ -36,12 +36,13 @@ pub fn setup_gameplay(
     clock: Res<ChartClock>,
     asset_server: Res<AssetServer>,
     fonts: Res<UiFonts>,
-    windows: Query<&Window, With<PrimaryWindow>>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut layout: ResMut<PlayfieldLayout>,
     _audio: Res<Audio>,
 ) {
-    if let Ok(window) = windows.single() {
-        *layout = PlayfieldLayout::from_window(window);
+    if let Ok(mut window) = windows.single_mut() {
+        *layout = PlayfieldLayout::from_window(&window);
+        window.focused = true;
     }
     commands.insert_resource(HudDisplayCache::default());
 
@@ -174,10 +175,22 @@ pub fn setup_gameplay(
         GameplayEntity,
     ));
 
-    spawn_metronome_lines(&mut commands, &chart, &layout, &clock, &run);
-
-    // Note entities pre-spawned from chart.
-    spawn_note_visuals(&mut commands, &chart, &layout, &clock, &run);
+    let (min_time, max_time) =
+        layout.visible_chart_time_window(clock.visual_elapsed, run.lane_speed);
+    let mut streams = PlayfieldVisualStreams::default();
+    streams.notes.align_to_time(&chart.notes, min_time);
+    streams
+        .metronome
+        .align_to_time(&chart.metronome_beats, min_time);
+    streams.notes.spawn_visible_through(
+        &mut commands,
+        &chart.notes,
+        &layout,
+        &clock,
+        &run,
+        max_time,
+    );
+    commands.insert_resource(streams);
 
     spawn_gameplay_hud(&mut commands, &fonts);
 }

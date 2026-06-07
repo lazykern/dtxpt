@@ -16,6 +16,7 @@ use crate::audio::{
 };
 use crate::gameplay::clock::ChartClock;
 use crate::gameplay::layout::PlayfieldLayout;
+use crate::gameplay::rendering::notes::PlayfieldVisualStreams;
 use crate::gameplay::run::RunState;
 use crate::ui::fonts::{UiFonts, text_font};
 use crate::ui::input::UiKeyRepeat;
@@ -47,6 +48,7 @@ pub(crate) struct PauseMenuActions<'w, 's> {
     bgm_instance: Option<Res<'w, BgmInstance>>,
     active: ResMut<'w, ActiveSounds>,
     metronome_active: ResMut<'w, MetronomeActive>,
+    streams: ResMut<'w, PlayfieldVisualStreams>,
     sound_bank: Res<'w, SoundBank>,
     mix: Res<'w, AudioMix>,
     audio: Res<'w, Audio>,
@@ -103,6 +105,7 @@ impl PauseMenuActions<'_, '_> {
                     self.bgm_instance.take(),
                     &mut self.active,
                     &mut self.metronome_active,
+                    &mut self.streams,
                     &mut self.visuals,
                 );
                 self.next_pause.set(PauseState::Running);

@@ -14,9 +14,7 @@ use crate::gameplay::run::RunState;
 
 use super::super::mix::*;
 use super::super::sound_bank::*;
-use super::state::{
-    ActiveSounds, AudioFrame, BgmInstance, MetronomeActive, MetronomeSounds,
-};
+use super::state::{ActiveSounds, AudioFrame, BgmInstance, MetronomeActive, MetronomeSounds};
 use super::transport::combined_playback_rate;
 use super::voices::{play_auto_se_sound, play_drum_sound, play_wav};
 
@@ -41,6 +39,7 @@ pub(crate) fn schedule_metronome(
     audio: Res<Audio>,
     mut metronome_active: ResMut<MetronomeActive>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
+    mut playback_diag: ResMut<crate::gameplay::PlaybackDiagnostics>,
 ) {
     if is_paused(pause_state.get()) || run.finished || !run.metronome_sound {
         return;
@@ -81,6 +80,15 @@ pub(crate) fn schedule_metronome(
         let instance = audio.play(handle).with_volume(mix.master_db()).handle();
         metronome_active.instances.push(instance);
         beat.fired = true;
+        if crate::gameplay::diagnostics::diag_active(&run) {
+            playback_diag.metronome_beats += 1;
+            debug!(
+                "metronome {} @ chart {:.3}s visual {:.3}s",
+                if beat.downbeat { "downbeat" } else { "beat" },
+                beat.time,
+                elapsed,
+            );
+        }
     }
 }
 

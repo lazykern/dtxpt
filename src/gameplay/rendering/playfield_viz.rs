@@ -5,6 +5,7 @@ use crate::app::state::{PauseState, is_paused};
 use crate::gameplay::clock::ChartClock;
 use crate::gameplay::constants::*;
 use crate::gameplay::layout::PlayfieldLayout;
+use crate::gameplay::rendering::notes::PlayfieldVisualStreams;
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, Judgement, NoteState};
 use dtxpt::input::lanes::LANES;
@@ -85,8 +86,21 @@ pub(crate) fn update_metronome_lines(
     run: Res<RunState>,
     clock: Res<ChartClock>,
     layout: Res<PlayfieldLayout>,
+    mut streams: ResMut<PlayfieldVisualStreams>,
+    mut playback_diag: ResMut<crate::gameplay::PlaybackDiagnostics>,
     mut lines: Query<(Entity, &MetronomeLineVisual, &mut Transform, &mut Sprite)>,
 ) {
+    let (_min_time, max_time) =
+        layout.visible_chart_time_window(clock.visual_elapsed, run.lane_speed);
+    streams.metronome.spawn_visible_through(
+        &mut commands,
+        &chart.metronome_beats,
+        &layout,
+        &clock,
+        &run,
+        max_time,
+    );
+
     for (entity, visual, mut transform, mut sprite) in lines.iter_mut() {
         let beat = &chart.metronome_beats[visual.beat_index];
         transform.translation.y = layout.note_y(beat.time, clock.visual_elapsed, run.lane_speed);
@@ -100,6 +114,13 @@ pub(crate) fn update_metronome_lines(
             ((transform.translation.y - layout.judge_y) / layout.note_fade_span).clamp(0.15, 1.0);
         sprite.color = sprite.color.with_alpha(base_alpha * fade);
         if transform.translation.y < layout.judge_y - layout.note_fade_span {
+            if crate::gameplay::diagnostics::diag_active(&run) {
+                playback_diag.metro_line_despawns += 1;
+                debug!(
+                    "metronome line despawn beat={} @ chart {:.3}s",
+                    visual.beat_index, beat.time,
+                );
+            }
             commands.entity(entity).despawn();
         }
     }
@@ -111,8 +132,20 @@ pub(crate) fn update_note_visuals(
     run: Res<RunState>,
     clock: Res<ChartClock>,
     layout: Res<PlayfieldLayout>,
+    mut streams: ResMut<PlayfieldVisualStreams>,
     mut notes: Query<(Entity, &NoteVisual, &mut Transform, &mut Sprite)>,
 ) {
+    let (_min_time, max_time) =
+        layout.visible_chart_time_window(clock.visual_elapsed, run.lane_speed);
+    streams.notes.spawn_visible_through(
+        &mut commands,
+        &chart.notes,
+        &layout,
+        &clock,
+        &run,
+        max_time,
+    );
+
     for (entity, visual, mut transform, mut sprite) in notes.iter_mut() {
         let note = &chart.notes[visual.note_index];
         match note.state {
@@ -124,6 +157,9 @@ pub(crate) fn update_note_visuals(
                 let fade = ((transform.translation.y - layout.judge_y) / layout.note_fade_span)
                     .clamp(0.25, 1.0);
                 sprite.color = LANES[note.lane].color.with_alpha(fade);
+                if transform.translation.y < layout.judge_y - layout.note_fade_span {
+                    commands.entity(entity).despawn();
+                }
             }
             NoteState::Hit(_) | NoteState::Missed | NoteState::Skipped => {
                 commands.entity(entity).despawn();

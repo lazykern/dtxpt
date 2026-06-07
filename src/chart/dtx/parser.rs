@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::chart::model::{
     Chart, ChartNote, NoteState, ScheduledAudio, ScheduledAudioKind, WavInfo, WavRole,
 };
 use crate::chart::timing::ChartTiming;
-use crate::input::lanes::{dtx_drum_channel_to_lane, DTX_TICKS_PER_MEASURE};
+use crate::input::lanes::{DTX_TICKS_PER_MEASURE, dtx_drum_channel_to_lane};
 
 use super::channels::{
     dtx_wav_pan_command_id, dtx_wav_volume_command_id, is_drum_backing_stem_wav, is_dtx_se_channel,

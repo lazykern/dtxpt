@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 use bevy::log::info;

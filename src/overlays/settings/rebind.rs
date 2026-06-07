@@ -2,24 +2,23 @@
 
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, Window};
+use bevy::winit::WinitSettings;
 
 use dtxpt::input::{
-    InputBindings, MidiInputState,
-    add_keyboard_lane_binding, add_midi_lane_binding, lane_binding_indices,
-    remove_lane_binding_at, reset_system_keyboard_binding, set_system_keyboard_binding,
+    InputBindings, MidiInputState, add_keyboard_lane_binding, add_midi_lane_binding,
+    lane_binding_indices, remove_lane_binding_at, reset_system_keyboard_binding,
+    set_system_keyboard_binding,
 };
 
 use crate::app::state::OverlayState;
-use crate::config::{GameConfig, save_game_config};
 use crate::audio::AudioMix;
+use crate::config::{GameConfig, save_game_config};
 use crate::gameplay::run::RunState;
 use crate::ui::input::UiKeyRepeat;
 use crate::ui::search_char;
 
-use super::{
-    RebindingTarget, SettingRow, SettingsOverlay, filtered_settings,
-};
 use super::values::apply_setting_delta;
+use super::{RebindingTarget, SettingRow, SettingsOverlay, filtered_settings};
 
 pub(crate) fn settings_overlay_input(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -32,6 +31,7 @@ pub(crate) fn settings_overlay_input(
     mut bindings: ResMut<InputBindings>,
     run: Option<ResMut<RunState>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut winit: ResMut<WinitSettings>,
     mut next_overlay: ResMut<NextState<OverlayState>>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
@@ -108,12 +108,10 @@ pub(crate) fn settings_overlay_input(
         needs_redraw = true;
     }
     let rows = filtered_settings(&overlay.search, overlay.category);
-    let selected_lane = rows
-        .get(overlay.selected)
-        .and_then(|row| match row {
-            SettingRow::LaneKey(lane) => Some(*lane),
-            _ => None,
-        });
+    let selected_lane = rows.get(overlay.selected).and_then(|row| match row {
+        SettingRow::LaneKey(lane) => Some(*lane),
+        _ => None,
+    });
 
     let selected_system_action = rows.get(overlay.selected).and_then(|row| match row {
         SettingRow::SystemAction(action) => Some(*action),
@@ -127,13 +125,14 @@ pub(crate) fn settings_overlay_input(
         if let Some(lane) = selected_lane {
             let entry_count = lane_binding_indices(&config.bindings, lane).len();
             if entry_count > 0 {
-                let cursor = overlay.lane_binding_cursor.min(entry_count.saturating_sub(1));
+                let cursor = overlay
+                    .lane_binding_cursor
+                    .min(entry_count.saturating_sub(1));
                 changed = remove_lane_binding_at(&mut config.bindings, lane, cursor);
                 if changed {
                     let remaining = lane_binding_indices(&config.bindings, lane).len();
-                    overlay.lane_binding_cursor = overlay
-                        .lane_binding_cursor
-                        .min(remaining.saturating_sub(1));
+                    overlay.lane_binding_cursor =
+                        overlay.lane_binding_cursor.min(remaining.saturating_sub(1));
                 }
             }
         } else if let Some(action) = selected_system_action {
@@ -211,11 +210,9 @@ pub(crate) fn settings_overlay_input(
         };
 
         if let Some(delta) = lane_cursor_delta {
-            let entry_count = lane_binding_indices(
-                &config.bindings,
-                selected_lane.expect("lane row selected"),
-            )
-            .len();
+            let entry_count =
+                lane_binding_indices(&config.bindings, selected_lane.expect("lane row selected"))
+                    .len();
             let next = if delta > 0 {
                 (overlay.lane_binding_cursor + 1).min(entry_count.saturating_sub(1))
             } else {
@@ -260,6 +257,7 @@ pub(crate) fn settings_overlay_input(
                     &mut mix,
                     run.as_deref_mut(),
                     Some(window.as_mut()),
+                    Some(&mut winit),
                 ),
                 Err(_) => apply_setting_delta(
                     rows[overlay.selected],
@@ -268,6 +266,7 @@ pub(crate) fn settings_overlay_input(
                     &mut mix,
                     run.as_deref_mut(),
                     None,
+                    Some(&mut winit),
                 ),
             };
             if changed {

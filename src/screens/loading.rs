@@ -24,7 +24,8 @@ pub struct ChartLoad {
 
 impl ChartLoad {
     pub fn start(&mut self, path: String) {
-        self.task.start(move || load_chart_from_path(&path).map_err(|err| err.to_string()));
+        self.task
+            .start(move || load_chart_from_path(&path).map_err(|err| err.to_string()));
         self.loading = true;
     }
 

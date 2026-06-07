@@ -8,8 +8,8 @@ use bevy::prelude::*;
 
 pub use persist::persist_runtime_config;
 pub(crate) use ui::{
-    refresh_settings_overlay, settings_row_interaction, setup_settings_overlay,
-    setup_global, sync_settings_list_scroll,
+    refresh_settings_overlay, settings_row_interaction, setup_global, setup_settings_overlay,
+    sync_settings_list_scroll,
 };
 pub use values::settings_overlay_toggle;
 

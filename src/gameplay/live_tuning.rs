@@ -120,7 +120,9 @@ mod tests {
             SystemAction::SeekForward,
             PlayMode::Normal
         ));
-        assert!(!song_rate_change_allowed_during_play(Some(PlayMode::Normal)));
+        assert!(!song_rate_change_allowed_during_play(Some(
+            PlayMode::Normal
+        )));
     }
 
     #[test]
@@ -129,6 +131,8 @@ mod tests {
             SystemAction::IncreaseSongRate,
             PlayMode::Practice
         ));
-        assert!(song_rate_change_allowed_during_play(Some(PlayMode::Practice)));
+        assert!(song_rate_change_allowed_during_play(Some(
+            PlayMode::Practice
+        )));
     }
 }
