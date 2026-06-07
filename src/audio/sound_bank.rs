@@ -3,7 +3,7 @@ use bevy_kira_audio::AudioSource;
 
 use kira::sound::static_sound::StaticSoundData;
 
-use dtxpt::chart::Chart;
+use dtxpt::chart::{Chart, WavRole};
 
 #[derive(Resource)]
 pub(crate) struct SoundBank {
@@ -14,6 +14,7 @@ pub(crate) struct LoadedWav {
     pub(crate) handle: Handle<AudioSource>,
     pub volume: i32,
     pub pan: i32,
+    pub role: WavRole,
 }
 
 pub(crate) struct DeferredWavEntry {
@@ -22,6 +23,7 @@ pub(crate) struct DeferredWavEntry {
     pub path: std::path::PathBuf,
     pub volume: i32,
     pub pan: i32,
+    pub role: WavRole,
 }
 
 pub(crate) struct BackgroundDecodeResult {
@@ -30,6 +32,7 @@ pub(crate) struct BackgroundDecodeResult {
     pub(crate) sound: std::result::Result<StaticSoundData, kira::sound::FromFileError>,
     pub volume: i32,
     pub pan: i32,
+    pub role: WavRole,
 }
 
 #[derive(Resource)]
@@ -107,6 +110,7 @@ pub(crate) fn build_sound_bank_for_ids(
                 handle,
                 volume: wav.volume,
                 pan: wav.pan,
+                role: wav.role,
             },
         );
     }
@@ -155,6 +159,7 @@ pub(crate) fn build_deferred_entries(
             path,
             volume: wav.volume,
             pan: wav.pan,
+            role: wav.role,
         });
     }
     entries
@@ -190,6 +195,7 @@ pub(crate) fn merge_decoded_audio(
                         handle,
                         volume: result.volume,
                         pan: result.pan,
+                        role: result.role,
                     },
                 );
             }

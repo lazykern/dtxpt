@@ -21,6 +21,12 @@ pub fn persist_runtime_config(
         && config.song_playback_rate == run.song_playback_rate
         && config.play_mode == run.play_mode
         && config.metronome_sound == run.metronome_sound
+        && config.lp_muting == run.lp_muting
+        && config.drum_hit_sound == run.drum_hit_sound
+        && config.hit_sound_priority_hh == run.hit_sound_priority_hh
+        && config.hit_sound_priority_ft == run.hit_sound_priority_ft
+        && config.hit_sound_priority_cy == run.hit_sound_priority_cy
+        && config.hit_sound_priority_lp == run.hit_sound_priority_lp
         && config.show_debug_hud == run.show_debug_hud
     {
         return;
@@ -34,6 +40,12 @@ pub fn persist_runtime_config(
     config.song_playback_rate = run.song_playback_rate;
     config.play_mode = run.play_mode;
     config.metronome_sound = run.metronome_sound;
+    config.lp_muting = run.lp_muting;
+    config.drum_hit_sound = run.drum_hit_sound;
+    config.hit_sound_priority_hh = run.hit_sound_priority_hh;
+    config.hit_sound_priority_ft = run.hit_sound_priority_ft;
+    config.hit_sound_priority_cy = run.hit_sound_priority_cy;
+    config.hit_sound_priority_lp = run.hit_sound_priority_lp;
     config.show_debug_hud = run.show_debug_hud;
 
     if let Err(err) = save_game_config(&config) {

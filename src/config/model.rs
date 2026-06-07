@@ -2,6 +2,34 @@ use bevy::prelude::*;
 use dtxpt::input::bindings::{InputBindingConfig, PlayMode, default_input_bindings};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HitSoundPriority {
+    ChipOverPad,
+    PadOverChip,
+}
+
+impl HitSoundPriority {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ChipOverPad => "chip",
+            Self::PadOverChip => "pad",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::ChipOverPad => Self::PadOverChip,
+            Self::PadOverChip => Self::ChipOverPad,
+        }
+    }
+}
+
+impl Default for HitSoundPriority {
+    fn default() -> Self {
+        Self::ChipOverPad
+    }
+}
+
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameConfig {
@@ -23,13 +51,19 @@ pub struct GameConfig {
     pub legacy_lane_keys: Option<[String; 10]>,
     pub vsync: bool,
     pub metronome_sound: bool,
+    pub lp_muting: bool,
+    pub drum_hit_sound: bool,
+    pub hit_sound_priority_hh: HitSoundPriority,
+    pub hit_sound_priority_ft: HitSoundPriority,
+    pub hit_sound_priority_cy: HitSoundPriority,
+    pub hit_sound_priority_lp: HitSoundPriority,
     pub show_debug_hud: bool,
 }
 
 impl Default for GameConfig {
     fn default() -> Self {
         Self {
-            version: 7,
+            version: 9,
             chart_root: "charts".into(),
             last_chart_path: String::new(),
             preferred_difficulty: String::new(),
@@ -44,6 +78,12 @@ impl Default for GameConfig {
             legacy_lane_keys: None,
             vsync: true,
             metronome_sound: true,
+            lp_muting: true,
+            drum_hit_sound: true,
+            hit_sound_priority_hh: HitSoundPriority::ChipOverPad,
+            hit_sound_priority_ft: HitSoundPriority::ChipOverPad,
+            hit_sound_priority_cy: HitSoundPriority::ChipOverPad,
+            hit_sound_priority_lp: HitSoundPriority::ChipOverPad,
             show_debug_hud: false,
         }
     }

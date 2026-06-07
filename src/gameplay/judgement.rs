@@ -12,7 +12,10 @@ use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::playfield_viz::spawn_hit_burst;
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete};
-use dtxpt::input::lanes::lane_to_dtx_channel;
+use dtxpt::input::lanes::{
+    PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
+};
+use crate::config::HitSoundPriority;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn process_lane_hit(
@@ -32,6 +35,19 @@ pub(crate) fn process_lane_hit(
     rng: &mut GameRng,
     lane_receptors: &mut Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
 ) {
+    let hit_sound_priority = hit_sound_priority_for_lane(lane, run);
+    let lanes_with_notes: std::collections::HashSet<usize> =
+        chart.notes.iter().map(|note| note.lane).collect();
+    let chart_has_lane = |lane_index: usize| lanes_with_notes.contains(&lane_index);
+    let search_lanes = |lane_index: usize| -> Vec<usize> {
+        if hit_sound_priority == HitSoundPriority::PadOverChip {
+            if let Some(group) = lane_pad_group(lane_index) {
+                return pad_group_lanes_for_search(group, lane_index, chart_has_lane);
+            }
+        }
+        vec![lane_index]
+    };
+
     let mut best: Option<(usize, f32)> = None;
     for (index, note) in chart.notes.iter().enumerate() {
         if note.lane != lane || note.state != NoteState::Pending {
@@ -56,13 +72,49 @@ pub(crate) fn process_lane_hit(
             );
             spawn_hit_burst(commands, layout, lane, judgement, hit_y);
             let playback_rate = (judgement == Judgement::Poor).then(|| dtx_bad_playback_rate(rng));
+            if run.drum_hit_sound {
+                let sound_index = resolve_hit_sound_note_index(
+                    chart,
+                    lane,
+                    index,
+                    elapsed,
+                    hit_sound_priority,
+                    chart_has_lane,
+                );
+                let sound_note = &chart.notes[sound_index];
+                play_drum_sound(
+                    sound_note.wav_id,
+                    sound_note.channel,
+                    lane,
+                    playback_rate,
+                    run.song_playback_rate,
+                    frame,
+                    run.lp_muting,
+                    sound_bank,
+                    mix,
+                    audio,
+                    audio_instances,
+                    active,
+                );
+            }
+        }
+    } else {
+        flash_lane_receptor(lane, lane_receptors);
+
+        let lanes = search_lanes(lane);
+        let nearest = find_nearest_pending_note(&chart.notes, &lanes, elapsed);
+        let (nearest_wav, channel) = nearest
+            .map(|n| (n.wav_id, n.channel))
+            .unwrap_or((None, lane_to_dtx_channel(lane)));
+        if run.drum_hit_sound {
             play_drum_sound(
-                chart.notes[index].wav_id,
-                chart.notes[index].channel,
+                nearest_wav,
+                channel,
                 lane,
-                playback_rate,
+                None,
                 run.song_playback_rate,
                 frame,
+                run.lp_muting,
                 sound_bank,
                 mix,
                 audio,
@@ -70,35 +122,64 @@ pub(crate) fn process_lane_hit(
                 active,
             );
         }
-    } else {
-        flash_lane_receptor(lane, lane_receptors);
-
-        let nearest = chart
-            .notes
-            .iter()
-            .filter(|n| n.lane == lane && n.state == NoteState::Pending)
-            .min_by(|a, b| {
-                (elapsed - a.time)
-                    .abs()
-                    .total_cmp(&(elapsed - b.time).abs())
-            });
-        let (nearest_wav, channel) = nearest
-            .map(|n| (n.wav_id, n.channel))
-            .unwrap_or((None, lane_to_dtx_channel(lane)));
-        play_drum_sound(
-            nearest_wav,
-            channel,
-            lane,
-            None,
-            run.song_playback_rate,
-            frame,
-            sound_bank,
-            mix,
-            audio,
-            audio_instances,
-            active,
-        );
     }
+}
+
+fn hit_sound_priority_for_lane(lane: usize, run: &RunState) -> HitSoundPriority {
+    match lane_pad_group(lane) {
+        Some(PadGroup::Hh) => run.hit_sound_priority_hh,
+        Some(PadGroup::Tom) => run.hit_sound_priority_ft,
+        Some(PadGroup::Cymbal) => run.hit_sound_priority_cy,
+        Some(PadGroup::Bd) => run.hit_sound_priority_lp,
+        None => HitSoundPriority::ChipOverPad,
+    }
+}
+
+fn resolve_hit_sound_note_index(
+    chart: &Chart,
+    lane: usize,
+    hit_index: usize,
+    elapsed: f32,
+    priority: HitSoundPriority,
+    chart_has_lane: impl Fn(usize) -> bool,
+) -> usize {
+    if priority == HitSoundPriority::ChipOverPad {
+        return hit_index;
+    }
+    let lanes = pad_group_lanes_for_search(
+        lane_pad_group(lane).expect("pad group lane"),
+        lane,
+        chart_has_lane,
+    );
+    find_nearest_pending_note_index(&chart.notes, &lanes, elapsed).unwrap_or(hit_index)
+}
+
+fn find_nearest_pending_note_index(
+    notes: &[dtxpt::chart::ChartNote],
+    lanes: &[usize],
+    elapsed: f32,
+) -> Option<usize> {
+    let mut best: Option<(usize, f32)> = None;
+    for (index, note) in notes.iter().enumerate() {
+        if !lanes.contains(&note.lane) || note.state != NoteState::Pending {
+            continue;
+        }
+        let delta = elapsed - note.time;
+        if delta.abs() <= Judgement::POOR_WINDOW
+            && best.is_none_or(|(_, best_delta)| delta.abs() < best_delta.abs())
+        {
+            best = Some((index, delta));
+        }
+    }
+    best.map(|(index, _)| index)
+}
+
+fn find_nearest_pending_note<'a>(
+    notes: &'a [dtxpt::chart::ChartNote],
+    lanes: &[usize],
+    elapsed: f32,
+) -> Option<&'a dtxpt::chart::ChartNote> {
+    find_nearest_pending_note_index(notes, lanes, elapsed).map(|index| &notes[index])
 }
 
 pub fn miss_late_notes(

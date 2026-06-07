@@ -48,6 +48,42 @@ pub struct WavInfo {
     pub filename: String,
     pub volume: i32,
     pub pan: i32,
+    pub role: WavRole,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WavRole {
+    Drum,
+    Bgm,
+    Se,
+    Guitar,
+    Bass,
+}
+
+impl WavRole {
+    pub const fn max_voices(self) -> usize {
+        match self {
+            Self::Drum => crate::input::lanes::POLYPHONIC_VOICES,
+            Self::Bgm | Self::Se => 1,
+            Self::Guitar | Self::Bass => {
+                if crate::input::lanes::POLYPHONIC_VOICES >= 2 {
+                    2
+                } else {
+                    1
+                }
+            }
+        }
+    }
+
+    pub const fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Drum, _) | (_, Self::Drum) => Self::Drum,
+            (Self::Guitar, _) | (_, Self::Guitar) => Self::Guitar,
+            (Self::Bass, _) | (_, Self::Bass) => Self::Bass,
+            (Self::Se, _) | (_, Self::Se) => Self::Se,
+            (Self::Bgm, Self::Bgm) => Self::Bgm,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -179,6 +215,22 @@ pub fn reconcile_metronome_for_time(beats: &mut [MetronomeBeat], target: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::lanes::POLYPHONIC_VOICES;
+
+    #[test]
+    fn wav_role_voice_caps_match_dtxmania_style_limits() {
+        assert_eq!(WavRole::Drum.max_voices(), POLYPHONIC_VOICES);
+        assert_eq!(WavRole::Bgm.max_voices(), 1);
+        assert_eq!(WavRole::Se.max_voices(), 1);
+        assert_eq!(WavRole::Guitar.max_voices(), POLYPHONIC_VOICES.min(2));
+        assert_eq!(WavRole::Bass.max_voices(), POLYPHONIC_VOICES.min(2));
+    }
+
+    #[test]
+    fn drum_role_wins_when_wav_is_used_multiple_ways() {
+        assert_eq!(WavRole::Se.merge(WavRole::Drum), WavRole::Drum);
+        assert_eq!(WavRole::Bgm.merge(WavRole::Se), WavRole::Se);
+    }
 
     #[test]
     fn reconcile_notes_forward_skip_marks_skipped() {

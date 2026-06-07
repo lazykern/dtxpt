@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::chart::model::{
-    Chart, ChartNote, NoteState, ScheduledAudio, ScheduledAudioKind, WavInfo,
+    Chart, ChartNote, NoteState, ScheduledAudio, ScheduledAudioKind, WavInfo, WavRole,
 };
 use crate::chart::timing::ChartTiming;
-use crate::input::lanes::{DTX_TICKS_PER_MEASURE, dtx_drum_channel_to_lane};
+use crate::input::lanes::{dtx_drum_channel_to_lane, DTX_TICKS_PER_MEASURE};
 
 use super::channels::{
     dtx_wav_pan_command_id, dtx_wav_volume_command_id, is_drum_backing_stem_wav, is_dtx_se_channel,
@@ -39,6 +39,13 @@ enum DtxEvent {
         tick: u32,
         ratio: f32,
     },
+}
+
+fn merge_wav_role(roles: &mut HashMap<u32, WavRole>, wav: u32, role: WavRole) {
+    roles
+        .entry(wav)
+        .and_modify(|existing| *existing = existing.merge(role))
+        .or_insert(role);
 }
 
 pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Chart, ChartTiming)> {
@@ -87,6 +94,7 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
                     filename: value.to_string(),
                     volume: *wav_volumes.get(&id).unwrap_or(&100),
                     pan: *wav_pans.get(&id).unwrap_or(&0),
+                    role: WavRole::Drum,
                 });
             }
             continue;
@@ -195,6 +203,32 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
         .unwrap_or(DTX_TICKS_PER_MEASURE);
     let timing = ChartTiming::new(base_bpm, tempo_events, end_tick);
 
+    let mut wav_roles: HashMap<u32, WavRole> = HashMap::new();
+    if let Some(wav) = bgm_wav {
+        wav_roles.insert(wav, WavRole::Bgm);
+    }
+    for event in &events {
+        match *event {
+            DtxEvent::Note { wav: Some(wav), .. } => {
+                merge_wav_role(&mut wav_roles, wav, WavRole::Drum);
+            }
+            DtxEvent::Bgm { wav, .. } => {
+                merge_wav_role(&mut wav_roles, bgm_wav.unwrap_or(wav), WavRole::Bgm);
+            }
+            DtxEvent::AutoSe { wav, .. } => {
+                if !is_drum_backing_stem_wav(wav, &wav_files) {
+                    merge_wav_role(&mut wav_roles, wav, WavRole::Se);
+                }
+            }
+            _ => {}
+        }
+    }
+    for wav in &mut wav_files {
+        if let Some(role) = wav_roles.get(&wav.id) {
+            wav.role = *role;
+        }
+    }
+
     let mut notes = events
         .iter()
         .filter_map(|event| match *event {
@@ -286,5 +320,36 @@ mod tests {
             chart.scheduled_audio[0].kind,
             ScheduledAudioKind::AutoSe { channel: 0x65 }
         ));
+        assert_eq!(
+            chart.wav_info.iter().find(|wav| wav.id == 1).unwrap().role,
+            WavRole::Drum
+        );
+        assert_eq!(
+            chart.wav_info.iter().find(|wav| wav.id == 3).unwrap().role,
+            WavRole::Se
+        );
+    }
+
+    #[test]
+    fn bgm_wav_role_uses_bgmwav_override() {
+        let text = "\
+#TITLE: bgm role\n\
+#BPM: 120\n\
+#WAV01: marker.ogg\n\
+#WAV02: bgm.ogg\n\
+#WAV03: kick.ogg\n\
+#BGMWAV: 02\n\
+#00001: 01\n\
+#00011: 03\n";
+        let (chart, _) = parse_dtx_chart(text, "test.dtx", ".").unwrap();
+
+        assert_eq!(
+            chart.wav_info.iter().find(|wav| wav.id == 2).unwrap().role,
+            WavRole::Bgm
+        );
+        assert_eq!(
+            chart.wav_info.iter().find(|wav| wav.id == 3).unwrap().role,
+            WavRole::Drum
+        );
     }
 }

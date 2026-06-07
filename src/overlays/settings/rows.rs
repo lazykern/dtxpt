@@ -38,6 +38,12 @@ pub(crate) enum SettingRow {
     SystemAction(SystemAction),
     Vsync,
     MetronomeSound,
+    LpMuting,
+    DrumHitSound,
+    HitSoundPriorityHh,
+    HitSoundPriorityTom,
+    HitSoundPriorityCymbal,
+    HitSoundPriorityBd,
     DebugHud,
 }
 
@@ -54,6 +60,12 @@ pub(crate) fn category_rows(category: SettingCategory) -> Vec<SettingRow> {
             SettingRow::PlayMode,
             SettingRow::LaneSpeed,
             SettingRow::SongRate,
+            SettingRow::LpMuting,
+            SettingRow::DrumHitSound,
+            SettingRow::HitSoundPriorityHh,
+            SettingRow::HitSoundPriorityTom,
+            SettingRow::HitSoundPriorityCymbal,
+            SettingRow::HitSoundPriorityBd,
         ],
         SettingCategory::Input => {
             let mut rows: Vec<SettingRow> = (0..LANES.len()).map(SettingRow::LaneKey).collect();
@@ -147,6 +159,11 @@ impl SettingRow {
             SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => SettingCategory::Input,
             SettingRow::Vsync => SettingCategory::Graphics,
             SettingRow::MetronomeSound | SettingRow::DebugHud => SettingCategory::Debug,
+            SettingRow::LpMuting | SettingRow::DrumHitSound => SettingCategory::Gameplay,
+            SettingRow::HitSoundPriorityHh
+            | SettingRow::HitSoundPriorityTom
+            | SettingRow::HitSoundPriorityCymbal
+            | SettingRow::HitSoundPriorityBd => SettingCategory::Gameplay,
         }
     }
 
@@ -171,7 +188,11 @@ impl SettingRow {
     pub(crate) fn is_toggle(self) -> bool {
         matches!(
             self,
-            SettingRow::Vsync | SettingRow::MetronomeSound | SettingRow::DebugHud
+            SettingRow::Vsync
+                | SettingRow::MetronomeSound
+                | SettingRow::LpMuting
+                | SettingRow::DrumHitSound
+                | SettingRow::DebugHud
         )
     }
 
@@ -179,6 +200,8 @@ impl SettingRow {
         match self {
             SettingRow::Vsync => config.vsync,
             SettingRow::MetronomeSound => config.metronome_sound,
+            SettingRow::LpMuting => config.lp_muting,
+            SettingRow::DrumHitSound => config.drum_hit_sound,
             SettingRow::DebugHud => config.show_debug_hud,
             _ => false,
         }
@@ -219,6 +242,12 @@ impl SettingRow {
             SettingRow::SongRate => "Song rate",
             SettingRow::Vsync => "VSync",
             SettingRow::MetronomeSound => "Metronome sound",
+            SettingRow::LpMuting => "LP muting",
+            SettingRow::DrumHitSound => "Drum hit sound",
+            SettingRow::HitSoundPriorityHh => "HH hit priority",
+            SettingRow::HitSoundPriorityTom => "Tom hit priority",
+            SettingRow::HitSoundPriorityCymbal => "Cymbal hit priority",
+            SettingRow::HitSoundPriorityBd => "BD hit priority",
             SettingRow::DebugHud => "Debug HUD",
         }
     }
@@ -241,6 +270,20 @@ impl SettingRow {
             }
             SettingRow::Vsync => "Vertical sync for the game window.",
             SettingRow::MetronomeSound => "Play metronome clicks during gameplay.",
+            SettingRow::LpMuting => "Let left pedal close/choke hi-hat WAVs like DTXMania.",
+            SettingRow::DrumHitSound => "Play chart WAV when you manually hit drum notes.",
+            SettingRow::HitSoundPriorityHh => {
+                "HH group (HH/HHO/LC): chip = hit note WAV, pad = nearest group note WAV."
+            }
+            SettingRow::HitSoundPriorityTom => {
+                "Tom group (LT/FT): chip = hit note WAV, pad = nearest group note WAV."
+            }
+            SettingRow::HitSoundPriorityCymbal => {
+                "Cymbal group (CY/RD): chip = hit note WAV, pad = nearest group note WAV."
+            }
+            SettingRow::HitSoundPriorityBd => {
+                "BD group (BD/LP): chip = hit note WAV, pad = nearest group note WAV."
+            }
             SettingRow::DebugHud => "Show gameplay debug HUD overlay.",
         }
     }
@@ -264,6 +307,10 @@ impl SettingRow {
             SettingRow::BgmVolume => format!("{:.0}%", mix.bgm * 100.0),
             SettingRow::DrumVolume => format!("{:.0}%", mix.drums * 100.0),
             SettingRow::PlayMode => config.play_mode.label().to_string(),
+            SettingRow::HitSoundPriorityHh => config.hit_sound_priority_hh.label().to_string(),
+            SettingRow::HitSoundPriorityTom => config.hit_sound_priority_ft.label().to_string(),
+            SettingRow::HitSoundPriorityCymbal => config.hit_sound_priority_cy.label().to_string(),
+            SettingRow::HitSoundPriorityBd => config.hit_sound_priority_lp.label().to_string(),
             SettingRow::LaneSpeed => format!("{:.2}x", config.lane_speed),
             SettingRow::LaneKey(lane) => lane_bindings_value(
                 &config.bindings,
@@ -277,6 +324,8 @@ impl SettingRow {
             SettingRow::SongRate => format!("{:.2}x", config.song_playback_rate),
             SettingRow::Vsync => on_off(config.vsync),
             SettingRow::MetronomeSound => on_off(config.metronome_sound),
+            SettingRow::LpMuting => on_off(config.lp_muting),
+            SettingRow::DrumHitSound => on_off(config.drum_hit_sound),
             SettingRow::DebugHud => on_off(config.show_debug_hud),
         }
     }

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use dtxpt::chart::Judgement;
 use dtxpt::input::bindings::PlayMode;
 
-use crate::config::GameConfig;
+use crate::config::{GameConfig, HitSoundPriority};
 use crate::gameplay::constants::*;
 use crate::gameplay::gauge::GAUGE_START;
 
@@ -39,6 +39,12 @@ pub struct RunState {
     pub lane_speed: f32,
     pub song_playback_rate: f32,
     pub metronome_sound: bool,
+    pub lp_muting: bool,
+    pub drum_hit_sound: bool,
+    pub hit_sound_priority_hh: HitSoundPriority,
+    pub hit_sound_priority_ft: HitSoundPriority,
+    pub hit_sound_priority_cy: HitSoundPriority,
+    pub hit_sound_priority_lp: HitSoundPriority,
     pub show_debug_hud: bool,
     pub started: bool,
     pub score: f32,
@@ -71,6 +77,12 @@ impl RunState {
                 .song_playback_rate
                 .clamp(MIN_SONG_PLAYBACK_RATE, MAX_SONG_PLAYBACK_RATE),
             metronome_sound: config.metronome_sound,
+            lp_muting: config.lp_muting,
+            drum_hit_sound: config.drum_hit_sound,
+            hit_sound_priority_hh: config.hit_sound_priority_hh,
+            hit_sound_priority_ft: config.hit_sound_priority_ft,
+            hit_sound_priority_cy: config.hit_sound_priority_cy,
+            hit_sound_priority_lp: config.hit_sound_priority_lp,
             show_debug_hud: config.show_debug_hud,
             started: false,
             score: 0.0,

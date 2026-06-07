@@ -148,6 +148,7 @@ pub(crate) fn schedule_auto_se(
                             None,
                             run.song_playback_rate,
                             frame.0,
+                            run.lp_muting,
                             &sound_bank,
                             &mix,
                             &audio,

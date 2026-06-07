@@ -25,15 +25,19 @@ pub(crate) fn collect_active_drum_handles(active: &ActiveSounds) -> Vec<Handle<A
     for voices in active.voice_pools.values() {
         for slot in &voices.slots {
             if let Some(tracked) = slot
-                && seen.insert(tracked.handle.clone()) {
-                    handles.push(tracked.handle.clone());
-                }
+                && seen.insert(tracked.handle.clone())
+            {
+                handles.push(tracked.handle.clone());
+            }
         }
     }
     handles
 }
 
-pub(crate) fn stop_active_drums(audio_instances: &mut Assets<AudioInstance>, active: &mut ActiveSounds) {
+pub(crate) fn stop_active_drums(
+    audio_instances: &mut Assets<AudioInstance>,
+    active: &mut ActiveSounds,
+) {
     for handle in collect_active_drum_handles(active) {
         if let Some(instance) = audio_instances.get_mut(&handle) {
             instance.stop(instant_audio_tween());
@@ -51,6 +55,61 @@ pub(crate) fn stop_active_drums(audio_instances: &mut Assets<AudioInstance>, act
     active.last_hh_channel = None;
 }
 
+pub(crate) fn pause_active_drums(
+    audio_instances: &mut Assets<AudioInstance>,
+    active: &ActiveSounds,
+) {
+    for handle in collect_active_drum_handles(active) {
+        if let Some(instance) = audio_instances.get_mut(&handle) {
+            instance.pause(instant_audio_tween());
+        }
+    }
+}
+
+pub(crate) fn resume_active_drums(
+    audio_instances: &mut Assets<AudioInstance>,
+    active: &ActiveSounds,
+) {
+    for handle in collect_active_drum_handles(active) {
+        if let Some(instance) = audio_instances.get_mut(&handle) {
+            instance.resume(instant_audio_tween());
+        }
+    }
+}
+
+pub(crate) fn next_voice_pool_slot(voices: &mut super::state::WavVoices, max_voices: usize) -> usize {
+    let max_voices = max_voices.clamp(1, POLYPHONIC_VOICES);
+    let slot = voices.next % max_voices;
+    voices.next = (slot + 1) % max_voices;
+    slot
+}
+
+pub(crate) fn assign_voice_pool_slot(
+    voices: &mut super::state::WavVoices,
+    slot: usize,
+    handle: Handle<AudioInstance>,
+    frame: u64,
+) -> Option<TrackedAudioHandle> {
+    let previous = voices.slots[slot].take();
+    voices.slots[slot] = Some(TrackedAudioHandle {
+        handle,
+        born_frame: frame,
+    });
+    previous
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn active_voice_pool_slots(
+    voices: &super::state::WavVoices,
+    max_voices: usize,
+) -> usize {
+    let max_voices = max_voices.clamp(1, POLYPHONIC_VOICES);
+    voices.slots[..max_voices]
+        .iter()
+        .filter(|slot| slot.is_some())
+        .count()
+}
+
 fn normalize_hh_channel(channel: u32) -> u32 {
     if channel == DTX_CH_SE_HH {
         DTX_CH_HH_CLOSE
@@ -59,12 +118,12 @@ fn normalize_hh_channel(channel: u32) -> u32 {
     }
 }
 
-fn should_choke_hh(channel: u32, last_hh_channel: Option<u32>) -> bool {
+fn should_choke_hh(channel: u32, last_hh_channel: Option<u32>, lp_muting: bool) -> bool {
     let channel = normalize_hh_channel(channel);
     if last_hh_channel == Some(DTX_CH_HH_OPEN) {
         return false;
     }
-    matches!(channel, DTX_CH_HH_CLOSE | DTX_CH_LP)
+    channel == DTX_CH_HH_CLOSE || (lp_muting && channel == DTX_CH_LP)
 }
 
 fn is_hh_tracked_channel(channel: u32) -> bool {
@@ -98,6 +157,7 @@ pub(crate) fn play_drum_sound(
     playback_rate: Option<f64>,
     song_rate: f32,
     frame: u64,
+    lp_muting: bool,
     sound_bank: &SoundBank,
     mix: &AudioMix,
     audio: &Audio,
@@ -106,7 +166,7 @@ pub(crate) fn play_drum_sound(
 ) {
     let Some(id) = wav_id else { return };
 
-    if should_choke_hh(channel, active.last_hh_channel) {
+    if should_choke_hh(channel, active.last_hh_channel, lp_muting) {
         choke_hh_wavs(active, audio_instances);
     }
 
@@ -192,16 +252,13 @@ pub(crate) fn play_wav(
     let instance_handle = command.handle();
     if let Some(active) = active {
         let voices = active.voice_pools.entry(wav_id).or_default();
-        let slot = voices.next;
-        voices.next = (voices.next + 1) % POLYPHONIC_VOICES;
-        if let Some(previous) = voices.slots[slot].take()
-            && let Some(inst) = audio_instances.get_mut(&previous.handle) {
-                inst.stop(instant_audio_tween());
-            }
-        voices.slots[slot] = Some(TrackedAudioHandle {
-            handle: instance_handle.clone(),
-            born_frame: frame,
-        });
+        let max_voices = wav.role.max_voices();
+        let slot = next_voice_pool_slot(voices, max_voices);
+        if let Some(previous) = assign_voice_pool_slot(voices, slot, instance_handle.clone(), frame)
+            && let Some(inst) = audio_instances.get_mut(&previous.handle)
+        {
+            inst.stop(instant_audio_tween());
+        }
     }
     Some(instance_handle)
 }
@@ -234,7 +291,8 @@ pub(crate) fn log_active_audio_snapshot(
         .per_lane
         .iter()
         .enumerate()
-        .filter(|&(_lane, handles)| !handles.is_empty() ).map(|(lane, handles)| format!("{}:{}", LANES[lane].label, handles.len()))
+        .filter(|&(_lane, handles)| !handles.is_empty())
+        .map(|(lane, handles)| format!("{}:{}", LANES[lane].label, handles.len()))
         .collect::<Vec<_>>();
     let wav_counts = active
         .voice_pools
@@ -271,9 +329,10 @@ fn stop_wav_instant(
     };
     for slot in voices.slots.iter_mut() {
         if let Some(tracked) = slot.take()
-            && let Some(inst) = audio_instances.get_mut(&tracked.handle) {
-                inst.stop(instant_audio_tween());
-            }
+            && let Some(inst) = audio_instances.get_mut(&tracked.handle)
+        {
+            inst.stop(instant_audio_tween());
+        }
     }
 }
 
@@ -316,7 +375,7 @@ fn is_audio_instance_active(
     audio_instances.get(handle).is_some_and(|inst| {
         !matches!(
             inst.state(),
-            bevy_kira_audio::PlaybackState::Stopped | bevy_kira_audio::PlaybackState::Paused { .. }
+            bevy_kira_audio::PlaybackState::Stopped
         )
     })
 }
@@ -324,6 +383,13 @@ fn is_audio_instance_active(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lp_chokes_hh_only_when_muting_enabled() {
+        assert!(should_choke_hh(DTX_CH_LP, Some(DTX_CH_HH_CLOSE), true));
+        assert!(!should_choke_hh(DTX_CH_LP, Some(DTX_CH_HH_CLOSE), false));
+        assert!(should_choke_hh(DTX_CH_HH_CLOSE, Some(DTX_CH_HH_CLOSE), false));
+    }
 
     #[test]
     fn collect_active_drum_handles_deduplicates() {
@@ -342,5 +408,51 @@ mod tests {
             },
         );
         assert_eq!(collect_active_drum_handles(&active).len(), 1);
+    }
+
+    #[test]
+    fn monophonic_roles_cap_at_one_active_slot() {
+        use dtxpt::chart::WavRole;
+
+        let handle = Handle::<AudioInstance>::default();
+        for role in [WavRole::Bgm, WavRole::Se] {
+            let max_voices = role.max_voices();
+            assert_eq!(max_voices, 1);
+            let mut voices = super::super::state::WavVoices::default();
+            for frame in 0..3 {
+                let slot = next_voice_pool_slot(&mut voices, max_voices);
+                assign_voice_pool_slot(&mut voices, slot, handle.clone(), frame);
+            }
+            assert_eq!(active_voice_pool_slots(&voices, max_voices), 1);
+        }
+    }
+
+    #[test]
+    fn drum_role_keeps_four_active_slots() {
+        use dtxpt::chart::WavRole;
+
+        let max_voices = WavRole::Drum.max_voices();
+        assert_eq!(max_voices, POLYPHONIC_VOICES);
+        let handle = Handle::<AudioInstance>::default();
+        let mut voices = super::super::state::WavVoices::default();
+        for frame in 0..4 {
+            let slot = next_voice_pool_slot(&mut voices, max_voices);
+            assign_voice_pool_slot(&mut voices, slot, handle.clone(), frame);
+        }
+        assert_eq!(active_voice_pool_slots(&voices, max_voices), 4);
+        let slot = next_voice_pool_slot(&mut voices, max_voices);
+        assign_voice_pool_slot(&mut voices, slot, handle.clone(), 4);
+        assert_eq!(active_voice_pool_slots(&voices, max_voices), 4);
+    }
+
+    #[test]
+    fn role_caps_match_wav_role_max_voices() {
+        use dtxpt::chart::WavRole;
+
+        assert_eq!(WavRole::Drum.max_voices(), POLYPHONIC_VOICES);
+        assert_eq!(WavRole::Bgm.max_voices(), 1);
+        assert_eq!(WavRole::Se.max_voices(), 1);
+        assert_eq!(WavRole::Guitar.max_voices(), 2);
+        assert_eq!(WavRole::Bass.max_voices(), 2);
     }
 }

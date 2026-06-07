@@ -183,3 +183,109 @@ pub fn dtx_override_se_to_lane(channel: u32) -> Option<usize> {
         _ => None,
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadGroup {
+    Hh,
+    Tom,
+    Cymbal,
+    Bd,
+}
+
+pub fn lane_pad_group(lane: usize) -> Option<PadGroup> {
+    match lane {
+        LANE_HH | LANE_LC => Some(PadGroup::Hh),
+        LANE_LT | LANE_FT => Some(PadGroup::Tom),
+        LANE_CY | LANE_RD => Some(PadGroup::Cymbal),
+        LANE_BD | LANE_LP => Some(PadGroup::Bd),
+        _ => None,
+    }
+}
+
+pub fn pad_group_lanes_for_search(
+    group: PadGroup,
+    hit_lane: usize,
+    chart_has_lane: impl Fn(usize) -> bool,
+) -> Vec<usize> {
+    match group {
+        PadGroup::Hh => {
+            let mut lanes = Vec::new();
+            if chart_has_lane(LANE_HH) || hit_lane == LANE_HH {
+                lanes.push(LANE_HH);
+            }
+            if chart_has_lane(LANE_LC) || hit_lane == LANE_LC {
+                lanes.push(LANE_LC);
+            }
+            if hit_lane == LANE_LC && !chart_has_lane(LANE_LC) && !lanes.contains(&LANE_HH) {
+                lanes.push(LANE_HH);
+            }
+            if lanes.is_empty() {
+                lanes.extend([LANE_HH, LANE_LC]);
+            }
+            lanes
+        }
+        PadGroup::Tom => vec![LANE_LT, LANE_FT],
+        PadGroup::Cymbal => {
+            let mut lanes = Vec::new();
+            if chart_has_lane(LANE_CY) || hit_lane == LANE_CY {
+                lanes.push(LANE_CY);
+            }
+            if chart_has_lane(LANE_RD) || hit_lane == LANE_RD {
+                lanes.push(LANE_RD);
+            }
+            if hit_lane == LANE_RD && !chart_has_lane(LANE_RD) && !lanes.contains(&LANE_CY) {
+                lanes.push(LANE_CY);
+            }
+            if lanes.is_empty() {
+                lanes.extend([LANE_CY, LANE_RD]);
+            }
+            lanes
+        }
+        PadGroup::Bd => vec![LANE_BD, LANE_LP],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dtx_se24_to_se27_route_to_drum_lanes() {
+        assert_eq!(dtx_override_se_to_lane(0x84), Some(LANE_HH));
+        assert_eq!(dtx_override_se_to_lane(0x85), Some(LANE_CY));
+        assert_eq!(dtx_override_se_to_lane(0x86), Some(LANE_RD));
+        assert_eq!(dtx_override_se_to_lane(0x87), Some(LANE_LC));
+    }
+
+    #[test]
+    fn ordinary_se_channels_do_not_route_to_drum_lanes() {
+        assert_eq!(dtx_override_se_to_lane(0x61), None);
+        assert_eq!(dtx_override_se_to_lane(0x65), None);
+        assert_eq!(dtx_override_se_to_lane(0x90), None);
+    }
+
+    #[test]
+    fn pad_group_lane_mapping() {
+        assert_eq!(lane_pad_group(LANE_HH), Some(PadGroup::Hh));
+        assert_eq!(lane_pad_group(LANE_LC), Some(PadGroup::Hh));
+        assert_eq!(lane_pad_group(LANE_LT), Some(PadGroup::Tom));
+        assert_eq!(lane_pad_group(LANE_FT), Some(PadGroup::Tom));
+        assert_eq!(lane_pad_group(LANE_CY), Some(PadGroup::Cymbal));
+        assert_eq!(lane_pad_group(LANE_RD), Some(PadGroup::Cymbal));
+        assert_eq!(lane_pad_group(LANE_BD), Some(PadGroup::Bd));
+        assert_eq!(lane_pad_group(LANE_LP), Some(PadGroup::Bd));
+        assert_eq!(lane_pad_group(LANE_SD), None);
+    }
+
+    #[test]
+    fn rd_without_ride_notes_falls_back_to_cymbal_lane() {
+        let lanes = pad_group_lanes_for_search(PadGroup::Cymbal, LANE_RD, |_| false);
+        assert_eq!(lanes, vec![LANE_RD, LANE_CY]);
+    }
+
+    #[test]
+    fn lc_without_left_cymbal_notes_falls_back_to_hh_lane() {
+        let lanes = pad_group_lanes_for_search(PadGroup::Hh, LANE_LC, |_| false);
+        assert_eq!(lanes, vec![LANE_LC, LANE_HH]);
+    }
+}

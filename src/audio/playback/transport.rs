@@ -24,7 +24,7 @@ use super::state::{
     ActiveSounds, AudioFrame, BgmInstance, BoundInput, MetronomeActive, PlaybackAudio,
     RestartResume,
 };
-use super::voices::{log_active_audio_snapshot, stop_active_drums};
+use super::voices::{log_active_audio_snapshot, pause_active_drums, resume_active_drums, stop_active_drums};
 
 pub(crate) fn adjust_audio_mix(
     input: BoundInput,
@@ -168,12 +168,15 @@ pub(crate) fn set_playback_paused(
             && let Some(instance) = audio_instances.get_mut(handle) {
                 instance.pause(instant_audio_tween());
             }
-        stop_active_drums(audio_instances, active);
+        pause_active_drums(audio_instances, active);
         stop_metronome_instances(metronome_active, audio_instances);
-    } else if let Some(handle) = bgm
-        && let Some(instance) = audio_instances.get_mut(handle) {
-            instance.resume(instant_audio_tween());
-        }
+    } else {
+        if let Some(handle) = bgm
+            && let Some(instance) = audio_instances.get_mut(handle) {
+                instance.resume(instant_audio_tween());
+            }
+        resume_active_drums(audio_instances, active);
+    }
 }
 
 pub(crate) fn set_clock_to_time(clock: &mut ChartClock, run: &mut RunState, target: f32) {

@@ -5,7 +5,7 @@ use dtxpt::input::{InputBindings, MidiInputState, PlayMode, SystemAction};
 
 use crate::app::state::{AppState, OverlayState, PauseState, is_paused};
 use crate::audio::AudioMix;
-use crate::config::GameConfig;
+use crate::config::{GameConfig, HitSoundPriority};
 use crate::gameplay::constants::*;
 use crate::gameplay::run::RunState;
 
@@ -96,6 +96,42 @@ pub(crate) fn apply_setting_delta(
                 run.metronome_sound = config.metronome_sound;
             }
         }
+        SettingRow::LpMuting => {
+            config.lp_muting = !config.lp_muting;
+            if let Some(run) = run {
+                run.lp_muting = config.lp_muting;
+            }
+        }
+        SettingRow::DrumHitSound => {
+            config.drum_hit_sound = !config.drum_hit_sound;
+            if let Some(run) = run {
+                run.drum_hit_sound = config.drum_hit_sound;
+            }
+        }
+        SettingRow::HitSoundPriorityHh => {
+            config.hit_sound_priority_hh = cycle_hit_sound_priority(config.hit_sound_priority_hh, delta);
+            if let Some(run) = run {
+                run.hit_sound_priority_hh = config.hit_sound_priority_hh;
+            }
+        }
+        SettingRow::HitSoundPriorityTom => {
+            config.hit_sound_priority_ft = cycle_hit_sound_priority(config.hit_sound_priority_ft, delta);
+            if let Some(run) = run {
+                run.hit_sound_priority_ft = config.hit_sound_priority_ft;
+            }
+        }
+        SettingRow::HitSoundPriorityCymbal => {
+            config.hit_sound_priority_cy = cycle_hit_sound_priority(config.hit_sound_priority_cy, delta);
+            if let Some(run) = run {
+                run.hit_sound_priority_cy = config.hit_sound_priority_cy;
+            }
+        }
+        SettingRow::HitSoundPriorityBd => {
+            config.hit_sound_priority_lp = cycle_hit_sound_priority(config.hit_sound_priority_lp, delta);
+            if let Some(run) = run {
+                run.hit_sound_priority_lp = config.hit_sound_priority_lp;
+            }
+        }
         SettingRow::DebugHud => {
             config.show_debug_hud = !config.show_debug_hud;
             if let Some(run) = run {
@@ -104,6 +140,17 @@ pub(crate) fn apply_setting_delta(
         }
     }
     before != *config
+}
+
+fn cycle_hit_sound_priority(current: HitSoundPriority, delta: f32) -> HitSoundPriority {
+    if delta > 0.0 {
+        current.next()
+    } else {
+        match current {
+            HitSoundPriority::ChipOverPad => HitSoundPriority::PadOverChip,
+            HitSoundPriority::PadOverChip => HitSoundPriority::ChipOverPad,
+        }
+    }
 }
 
 pub fn settings_overlay_toggle(

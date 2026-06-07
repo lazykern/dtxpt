@@ -161,7 +161,7 @@ pub(crate) fn update_hud(
     };
 
     let debug_text = format!(
-        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}\nRender {:.1}fps {:.2}ms  Present {}  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms",
+        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Present {}  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms",
         chart.title,
         chart.source,
         run.play_mode.label(),
@@ -189,6 +189,8 @@ pub(crate) fn update_hud(
         mix.bgm * 100.0,
         mix.drums * 100.0,
         if run.metronome_sound { "on" } else { "off" },
+        if run.lp_muting { "on" } else { "off" },
+        if run.drum_hit_sound { "on" } else { "off" },
         stats.fps,
         stats.frame_ms,
         present_mode_text,

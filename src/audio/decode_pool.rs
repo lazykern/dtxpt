@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 use bevy::log::info;
@@ -17,9 +17,7 @@ pub fn spawn_bounded_decode(
     let (result_tx, result_rx) = mpsc::channel::<BackgroundDecodeResult>();
 
     let workers = DECODE_WORKERS.min(pending.max(1) as usize);
-    info!(
-        "spawning {workers} background decode workers for {pending} deferred WAV files"
-    );
+    info!("spawning {workers} background decode workers for {pending} deferred WAV files");
 
     for _ in 0..workers {
         let queue = Arc::clone(&queue);
@@ -49,6 +47,7 @@ fn decode_worker(
             sound: StaticSoundData::from_file(&entry.path),
             volume: entry.volume,
             pan: entry.pan,
+            role: entry.role,
         };
         result_tx.send(result).ok();
     }
