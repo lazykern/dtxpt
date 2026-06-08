@@ -131,13 +131,32 @@ pub(crate) fn sync_elapsed_from_audio(
     let target_visual = clock.judgement_elapsed;
     clock.visual_elapsed += frame_dt * run.song_playback_rate;
     let drift = target_visual - clock.visual_elapsed;
-    let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
-    let mut correction = drift * catchup;
-    correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
-    clock.visual_elapsed += correction;
+
+    // Sub-step catch-up loop. When audio drift exceeds one sub-step (e.g. after a heavy
+    // hitch or initial BGM warmup), advance the visual clock in N sub-steps within a
+    // CPU budget. Mirrors osu!lazer `FrameStabilityContainer.UpdateSubTree` loop.
+    let per_step_correction = if drift.abs() > CATCHUP_SUB_STEP_SECS {
+        let n = (drift.abs() / CATCHUP_SUB_STEP_SECS).ceil() as i32;
+        let n = n.clamp(1, MAX_CATCHUP_SUB_STEPS);
+        let per_step = drift / n as f32;
+        let stopwatch = std::time::Instant::now();
+        for _ in 0..n {
+            if stopwatch.elapsed().as_millis() > MAX_CATCHUP_CPU_MS {
+                break;
+            }
+            clock.visual_elapsed += per_step;
+        }
+        drift
+    } else {
+        let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
+        let mut correction = drift * catchup;
+        correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
+        clock.visual_elapsed += correction;
+        correction
+    };
 
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
-    clock.visual_correction_ms = correction * 1000.0;
+    clock.visual_correction_ms = per_step_correction * 1000.0;
 
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
