@@ -57,11 +57,23 @@ impl Plugin for GameplayPlugin {
                 interp_visual_clock.in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
             )
             .add_systems(
+                FixedUpdate,
+                (
+                    sync_elapsed_from_audio,
+                    capture_lane_inputs.run_if(overlay_closed),
+                    process_pending_lane_hits,
+                    autoplay_hit_notes,
+                    miss_late_notes,
+                    schedule_auto_se,
+                    schedule_metronome,
+                )
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
                 Update,
                 (
                     advance_audio_frame,
-                    sync_elapsed_from_audio.after(advance_audio_frame),
-                    restart_on_gesture.after(sync_elapsed_from_audio),
+                    restart_on_gesture,
                     adjust_timing_offset
                         .after(restart_on_gesture)
                         .run_if(overlay_closed),
@@ -89,10 +101,7 @@ impl Plugin for GameplayPlugin {
                     toggle_hotkeys
                         .after(sync_pause_focus)
                         .run_if(overlay_closed),
-                    miss_late_notes.after(process_pending_lane_hits),
-                    cleanup_active_sounds.after(process_pending_lane_hits),
-                    schedule_auto_se.after(process_pending_lane_hits),
-                    schedule_metronome.after(sync_elapsed_from_audio),
+                    cleanup_active_sounds,
                     merge_decoded_audio,
                 )
                     .run_if(in_state(AppState::Playing)),
@@ -100,42 +109,20 @@ impl Plugin for GameplayPlugin {
             .add_systems(
                 Update,
                 (
-                    capture_lane_inputs
-                        .after(sync_elapsed_from_audio)
-                        .after(toggle_playback_pause)
-                        .run_if(overlay_closed),
-                    process_pending_lane_hits
-                        .after(capture_lane_inputs)
-                        .after(toggle_hotkeys),
-                    autoplay_hit_notes
-                        .after(sync_elapsed_from_audio)
-                        .after(toggle_hotkeys),
+                    check_song_finished,
+                    finish_to_result.after(check_song_finished),
                 )
                     .run_if(in_state(AppState::Playing)),
             )
             .add_systems(
                 Update,
                 (
-                    check_song_finished.after(sync_elapsed_from_audio),
-                    finish_to_result
-                        .after(miss_late_notes)
-                        .after(check_song_finished),
-                )
-                    .run_if(in_state(AppState::Playing)),
-            )
-            .add_systems(
-                Update,
-                (
-                    update_note_visuals
-                        .after(sync_elapsed_from_audio)
-                        .after(apply_playfield_layout),
-                    update_metronome_lines
-                        .after(sync_elapsed_from_audio)
-                        .after(apply_playfield_layout),
+                    update_note_visuals.after(apply_playfield_layout),
+                    update_metronome_lines.after(apply_playfield_layout),
                     update_hit_bursts,
                     update_lane_receptor_flashes,
                     crate::gameplay::rendering::keyboard_viz::update_key_cap_flashes,
-                    update_render_stats.after(sync_elapsed_from_audio),
+                    update_render_stats,
                     monitor_playback_diagnostics.after(update_render_stats),
                     sync_debug_hud_visibility,
                     update_hud.after(monitor_playback_diagnostics),

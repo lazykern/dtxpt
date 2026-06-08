@@ -85,15 +85,15 @@ pub(crate) fn sync_elapsed_from_audio(
     pause_state: Res<State<PauseState>>,
     mut run: ResMut<RunState>,
     mut clock: ResMut<ChartClock>,
-    time: Res<Time>,
+    fixed_time: Res<Time<Fixed>>,
 ) {
     if is_paused(pause_state.get()) || run.finished {
         return;
     }
 
-    let frame_dt = time.delta_secs();
+    let fixed_dt = fixed_time.delta_secs();
     let previous_audio = clock.audio_elapsed;
-    let dt_advance = frame_dt * run.song_playback_rate;
+    let dt_advance = fixed_dt * run.song_playback_rate;
     let mut next_audio = previous_audio + dt_advance;
 
     if let Some(ref bgm) = bgm_instance {
@@ -106,7 +106,7 @@ pub(crate) fn sync_elapsed_from_audio(
             // the running clock unless the game itself stalled. Without this, a buffer
             // underrun or stream reinit can drag the audio clock backwards ~20ms/frame
             // and visibly desync the visual.
-            let bass_glitch = (measured - previous_audio).abs() > 0.5 && frame_dt <= 0.5;
+            let bass_glitch = (measured - previous_audio).abs() > 0.5 && fixed_dt <= 0.5;
             if bass_glitch {
                 warn!(
                     "BASS: ignoring suspicious position read measured={:.3} prev={:.3} delta={:.3}",
@@ -116,7 +116,7 @@ pub(crate) fn sync_elapsed_from_audio(
                 );
             } else if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
                 let drift = measured - next_audio;
-                let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
+                let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
                 let correction = (drift * catchup)
                     .clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
                 next_audio += correction;
@@ -128,13 +128,18 @@ pub(crate) fn sync_elapsed_from_audio(
     clock.audio_step_ms = (clock.audio_elapsed - previous_audio) * 1000.0;
     clock.judgement_elapsed = clock.audio_elapsed + run.timing_offset;
 
+    // Save prev before advancing; the AfterFixedMainLoop interpolator uses these
+    // to render sub-frame motion (lerp(prev, current, alpha)).
+    clock.prev_visual_elapsed = clock.visual_elapsed;
+    clock.prev_visual_smoothed = clock.visual_smoothed;
     let target_visual = clock.judgement_elapsed;
-    clock.visual_elapsed += frame_dt * run.song_playback_rate;
+    clock.visual_elapsed += fixed_dt * run.song_playback_rate;
     let drift = target_visual - clock.visual_elapsed;
 
-    // Sub-step catch-up loop. When audio drift exceeds one sub-step (e.g. after a heavy
-    // hitch or initial BGM warmup), advance the visual clock in N sub-steps within a
-    // CPU budget. Mirrors osu!lazer `FrameStabilityContainer.UpdateSubTree` loop.
+    // Catch-up. With FixedUpdate, per-tick drift is bounded by BASS audio buffer
+    // latency (~20ms), so a single sub-step is enough in the common case. The
+    // sub-step loop is retained for heavy-hitch cases (e.g. a debug build pause
+    // resume, or a deferred asset load spike).
     let per_step_correction = if drift.abs() > CATCHUP_SUB_STEP_SECS {
         let n = (drift.abs() / CATCHUP_SUB_STEP_SECS).ceil() as i32;
         let n = n.clamp(1, MAX_CATCHUP_SUB_STEPS);
@@ -148,7 +153,7 @@ pub(crate) fn sync_elapsed_from_audio(
         }
         drift
     } else {
-        let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
+        let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
         let mut correction = drift * catchup;
         correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
         clock.visual_elapsed += correction;
@@ -162,7 +167,6 @@ pub(crate) fn sync_elapsed_from_audio(
     // alpha to fully hide the teleport; small normal-frame steps use a fast alpha
     // for minimal lag. Tracks prev_visual_smoothed for diagnostics + future
     // sub-frame interpolation hook.
-    clock.prev_visual_smoothed = clock.visual_smoothed;
     let jump = (clock.visual_elapsed - clock.visual_smoothed).abs();
     let alpha = if jump > VISUAL_SMOOTH_BIG_THRESHOLD {
         VISUAL_SMOOTHING_ALPHA_BIG
@@ -182,7 +186,7 @@ pub(crate) fn sync_elapsed_from_audio(
     if run.elapsed >= 0.0 {
         run.started = true;
     }
-    run.judgement_timer.tick(time.delta());
+    run.judgement_timer.tick(std::time::Duration::from_secs_f32(fixed_dt));
 }
 
 pub(crate) fn stop_all_playback(
