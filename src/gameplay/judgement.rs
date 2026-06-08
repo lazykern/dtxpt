@@ -12,7 +12,7 @@ use crate::gameplay::input::flash_lane_receptor;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::playfield_viz::spawn_hit_burst;
 use crate::gameplay::run::RunState;
-use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete};
+use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete, resolve_empty_hit_sound};
 use dtxpt::input::lanes::{
     PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
 };
@@ -102,10 +102,17 @@ pub(crate) fn process_lane_hit(
         flash_lane_receptor(lane, lane_receptors);
 
         let lanes = search_lanes(lane);
-        let nearest = find_nearest_pending_note(&chart.notes, &lanes, elapsed);
-        let (nearest_wav, channel) = nearest
-            .map(|n| (n.wav_id, n.channel))
-            .unwrap_or((None, lane_to_dtx_channel(lane)));
+        let (nearest_wav, channel) = resolve_empty_hit_sound(
+            &chart.empty_hit_events,
+            lane,
+            &lanes,
+            elapsed,
+        )
+        .or_else(|| {
+            find_nearest_chart_note_for_empty_hit(&chart.notes, &lanes, elapsed)
+                .map(|n| (n.wav_id, n.channel))
+        })
+        .unwrap_or((None, lane_to_dtx_channel(lane)));
         if run.drum_hit_sound {
             play_drum_sound(
                 nearest_wav,
@@ -182,6 +189,23 @@ fn find_nearest_pending_note<'a>(
     find_nearest_pending_note_index(notes, lanes, elapsed).map(|index| &notes[index])
 }
 
+/// DTXMania `r指定時刻に一番近いChip_ヒット未済問わず不可視考慮`: nearest note on lane(s)
+/// for empty-pad hits, without judgement window or note-state filtering.
+fn find_nearest_chart_note_for_empty_hit<'a>(
+    notes: &'a [dtxpt::chart::ChartNote],
+    lanes: &[usize],
+    elapsed: f32,
+) -> Option<&'a dtxpt::chart::ChartNote> {
+    notes
+        .iter()
+        .filter(|note| lanes.contains(&note.lane))
+        .min_by(|a, b| {
+            (elapsed - a.time)
+                .abs()
+                .total_cmp(&(elapsed - b.time).abs())
+        })
+}
+
 pub fn miss_late_notes(
     mut chart: ResMut<Chart>,
     pause_state: Res<State<PauseState>>,
@@ -256,4 +280,57 @@ pub fn apply_judgement(run: &mut RunState, judgement: Judgement, delta: f32, tot
     }
 
     apply_gauge(run, judgement);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dtxpt::chart::ChartNote;
+
+    fn note(time: f32, lane: usize, wav: u32, state: NoteState) -> ChartNote {
+        ChartNote {
+            time,
+            lane,
+            channel: 0x11 + lane as u32,
+            wav_id: Some(wav),
+            state,
+        }
+    }
+
+    #[test]
+    fn empty_hit_finds_nearest_note_beyond_judge_window() {
+        let notes = vec![note(10.0, 0, 1, NoteState::Pending), note(20.0, 0, 2, NoteState::Pending)];
+        let nearest = find_nearest_chart_note_for_empty_hit(&notes, &[0], 16.0).unwrap();
+        assert_eq!(nearest.wav_id, Some(2));
+    }
+
+    #[test]
+    fn empty_hit_considers_hit_and_missed_notes() {
+        let notes = vec![
+            note(10.0, 0, 1, NoteState::Hit(Judgement::Perfect)),
+            note(20.0, 0, 2, NoteState::Missed),
+        ];
+        let nearest = find_nearest_chart_note_for_empty_hit(&notes, &[0], 12.0).unwrap();
+        assert_eq!(nearest.wav_id, Some(1));
+    }
+
+    #[test]
+    fn pending_note_search_stays_within_poor_window() {
+        let notes = vec![note(10.0, 0, 1, NoteState::Pending), note(20.0, 0, 2, NoteState::Pending)];
+        assert!(find_nearest_pending_note(&notes, &[0], 15.0).is_none());
+    }
+
+    #[test]
+    fn empty_hit_prefers_chart_nosound_over_nearest_note() {
+        use dtxpt::chart::EmptyHitEvent;
+
+        let events = vec![EmptyHitEvent {
+            time: 0.0,
+            lane: 0,
+            channel: 0xB3,
+            wav_id: Some(99),
+        }];
+        let sound = resolve_empty_hit_sound(&events, 0, &[0], 5.0).unwrap();
+        assert_eq!(sound, (Some(99), 0xB3));
+    }
 }

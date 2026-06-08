@@ -127,7 +127,12 @@ pub(crate) fn build_sound_bank_for_ids(
 }
 
 pub(crate) fn collect_immediate_wav_ids(chart: &Chart) -> std::collections::HashSet<u32> {
-    chart.notes.iter().filter_map(|note| note.wav_id).collect()
+    chart
+        .notes
+        .iter()
+        .filter_map(|note| note.wav_id)
+        .chain(chart.empty_hit_events.iter().filter_map(|event| event.wav_id))
+        .collect()
 }
 
 pub(crate) fn collect_deferred_wav_ids(chart: &Chart) -> std::collections::HashSet<u32> {

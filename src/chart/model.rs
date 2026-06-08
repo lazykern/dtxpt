@@ -13,10 +13,19 @@ pub struct Chart {
     pub source: String,
     pub bpm: f32,
     pub notes: Vec<ChartNote>,
+    pub empty_hit_events: Vec<EmptyHitEvent>,
     pub metronome_beats: Vec<MetronomeBeat>,
     pub scheduled_audio: Vec<ScheduledAudio>,
     pub wav_info: Vec<WavInfo>,
     pub chart_dir: String,
+}
+
+#[derive(Clone)]
+pub struct EmptyHitEvent {
+    pub time: f32,
+    pub lane: usize,
+    pub channel: u32,
+    pub wav_id: Option<u32>,
 }
 
 #[derive(Clone)]
@@ -165,6 +174,38 @@ pub fn chart_notes_complete(notes: &[ChartNote]) -> bool {
         .all(|note| !matches!(note.state, NoteState::Pending))
 }
 
+pub fn active_empty_hit_for_lane<'a>(
+    events: &'a [EmptyHitEvent],
+    lane: usize,
+    elapsed: f32,
+) -> Option<&'a EmptyHitEvent> {
+    events
+        .iter()
+        .filter(|event| event.lane == lane && event.time <= elapsed)
+        .max_by(|a, b| a.time.total_cmp(&b.time))
+}
+
+/// DTXMania B1 path: chart-defined empty-hit WAV for the pad, if any.
+pub fn resolve_empty_hit_sound(
+    events: &[EmptyHitEvent],
+    lane: usize,
+    search_lanes: &[usize],
+    elapsed: f32,
+) -> Option<(Option<u32>, u32)> {
+    let mut order = vec![lane];
+    for search_lane in search_lanes {
+        if *search_lane != lane && !order.contains(search_lane) {
+            order.push(*search_lane);
+        }
+    }
+    for search_lane in order {
+        if let Some(event) = active_empty_hit_for_lane(events, search_lane, elapsed) {
+            return Some((event.wav_id, event.channel));
+        }
+    }
+    None
+}
+
 pub fn chart_bgm_start_time(chart: &Chart) -> Option<f32> {
     chart
         .scheduled_audio
@@ -311,12 +352,35 @@ mod tests {
     }
 
     #[test]
+    fn resolve_empty_hit_uses_latest_event_at_or_before_time() {
+        let events = vec![
+            EmptyHitEvent {
+                time: 0.0,
+                lane: 0,
+                channel: 0xB3,
+                wav_id: Some(1),
+            },
+            EmptyHitEvent {
+                time: 10.0,
+                lane: 0,
+                channel: 0xB3,
+                wav_id: Some(2),
+            },
+        ];
+        let sound = resolve_empty_hit_sound(&events, 0, &[0], 12.0).unwrap();
+        assert_eq!(sound, (Some(2), 0xB3));
+        let earlier = resolve_empty_hit_sound(&events, 0, &[0], 5.0).unwrap();
+        assert_eq!(earlier, (Some(1), 0xB3));
+    }
+
+    #[test]
     fn metronome_suppressed_before_bgm_and_with_stick_se() {
         let chart = Chart {
             title: String::new(),
             source: String::new(),
             bpm: 120.0,
             notes: Vec::new(),
+            empty_hit_events: Vec::new(),
             metronome_beats: Vec::new(),
             scheduled_audio: vec![
                 ScheduledAudio {

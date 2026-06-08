@@ -174,6 +174,23 @@ pub fn dtx_drum_channel_to_lane(channel: u32) -> Option<usize> {
     }
 }
 
+/// NoChip channels (`0xB1`–`0xBE`): chart-defined empty-pad hit sounds.
+pub fn dtx_nosound_channel_to_lane(channel: u32) -> Option<usize> {
+    match channel {
+        0xB1 | 0xB8 => Some(LANE_HH),
+        0xB2 => Some(LANE_SD),
+        0xB3 | 0xBE => Some(LANE_BD),
+        0xB4 => Some(LANE_HT),
+        0xB5 => Some(LANE_LT),
+        0xB6 => Some(LANE_CY),
+        0xB7 => Some(LANE_FT),
+        0xB9 => Some(LANE_RD),
+        0xBC => Some(LANE_LC),
+        0xBD => Some(LANE_LP),
+        _ => None,
+    }
+}
+
 pub fn dtx_override_se_to_lane(channel: u32) -> Option<usize> {
     match channel {
         0x84 => Some(LANE_HH),
@@ -248,6 +265,16 @@ pub fn pad_group_lanes_for_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nosound_channels_map_to_lanes() {
+        assert_eq!(dtx_nosound_channel_to_lane(0xB1), Some(LANE_HH));
+        assert_eq!(dtx_nosound_channel_to_lane(0xB8), Some(LANE_HH));
+        assert_eq!(dtx_nosound_channel_to_lane(0xB3), Some(LANE_BD));
+        assert_eq!(dtx_nosound_channel_to_lane(0xBE), Some(LANE_BD));
+        assert_eq!(dtx_nosound_channel_to_lane(0xBC), Some(LANE_LC));
+        assert_eq!(dtx_nosound_channel_to_lane(0xBA), None);
+    }
 
     #[test]
     fn dtx_se24_to_se27_route_to_drum_lanes() {

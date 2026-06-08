@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow};
 
 use crate::chart::model::{
-    Chart, ChartNote, NoteState, ScheduledAudio, ScheduledAudioKind, WavInfo, WavRole,
+    Chart, ChartNote, EmptyHitEvent, NoteState, ScheduledAudio, ScheduledAudioKind, WavInfo,
+    WavRole,
 };
 use crate::chart::timing::ChartTiming;
-use crate::input::lanes::{DTX_TICKS_PER_MEASURE, dtx_drum_channel_to_lane};
-
-use super::channels::{
-    dtx_wav_pan_command_id, dtx_wav_volume_command_id, is_drum_backing_stem_wav, is_dtx_se_channel,
+use crate::input::lanes::{
+    DTX_TICKS_PER_MEASURE, dtx_drum_channel_to_lane, dtx_nosound_channel_to_lane,
 };
+
+use super::channels::{dtx_wav_pan_command_id, dtx_wav_volume_command_id, is_dtx_se_channel};
 use super::metronome::build_metronome_beats;
 use super::util::{base36_pair, base36_str, normalized_pairs, parse_float};
 
@@ -30,6 +31,12 @@ enum DtxEvent {
         tick: u32,
         channel: u32,
         wav: u32,
+    },
+    EmptyHit {
+        tick: u32,
+        lane: usize,
+        channel: u32,
+        wav: Option<u32>,
     },
     Bpm {
         tick: u32,
@@ -165,6 +172,14 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
                     if let Ok(wav) = base36_pair(pair) {
                         events.push(DtxEvent::AutoSe { tick, channel, wav });
                     }
+                } else if let Some(lane) = dtx_nosound_channel_to_lane(channel) {
+                    let wav = base36_pair(pair).ok();
+                    events.push(DtxEvent::EmptyHit {
+                        tick,
+                        lane,
+                        channel,
+                        wav,
+                    });
                 } else if let Some(lane) = dtx_drum_channel_to_lane(channel) {
                     let wav = base36_pair(pair).ok();
                     events.push(DtxEvent::Note {
@@ -212,13 +227,14 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
             DtxEvent::Note { wav: Some(wav), .. } => {
                 merge_wav_role(&mut wav_roles, wav, WavRole::Drum);
             }
+            DtxEvent::EmptyHit { wav: Some(wav), .. } => {
+                merge_wav_role(&mut wav_roles, wav, WavRole::Drum);
+            }
             DtxEvent::Bgm { wav, .. } => {
                 merge_wav_role(&mut wav_roles, bgm_wav.unwrap_or(wav), WavRole::Bgm);
             }
             DtxEvent::AutoSe { wav, .. } => {
-                if !is_drum_backing_stem_wav(wav, &wav_files) {
-                    merge_wav_role(&mut wav_roles, wav, WavRole::Se);
-                }
+                merge_wav_role(&mut wav_roles, wav, WavRole::Se);
             }
             _ => {}
         }
@@ -253,6 +269,25 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
         return Err(anyhow!("no playable drum notes found"));
     }
 
+    let mut empty_hit_events = events
+        .iter()
+        .filter_map(|event| match *event {
+            DtxEvent::EmptyHit {
+                tick,
+                lane,
+                channel,
+                wav,
+            } => Some(EmptyHitEvent {
+                time: timing.time_at_tick(tick),
+                lane,
+                channel,
+                wav_id: wav,
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    empty_hit_events.sort_by(|a, b| a.time.total_cmp(&b.time));
+
     let mut scheduled_audio = events
         .iter()
         .filter_map(|event| match *event {
@@ -262,18 +297,12 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
                 kind: ScheduledAudioKind::Bgm,
                 fired: false,
             }),
-            DtxEvent::AutoSe { tick, channel, wav } => {
-                if is_drum_backing_stem_wav(wav, &wav_files) {
-                    None
-                } else {
-                    Some(ScheduledAudio {
-                        time: timing.time_at_tick(tick),
-                        wav_id: wav,
-                        kind: ScheduledAudioKind::AutoSe { channel },
-                        fired: false,
-                    })
-                }
-            }
+            DtxEvent::AutoSe { tick, channel, wav } => Some(ScheduledAudio {
+                time: timing.time_at_tick(tick),
+                wav_id: wav,
+                kind: ScheduledAudioKind::AutoSe { channel },
+                fired: false,
+            }),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -287,6 +316,7 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
             source: source.into(),
             bpm: base_bpm,
             notes,
+            empty_hit_events,
             metronome_beats,
             scheduled_audio,
             wav_info: wav_files,
@@ -301,7 +331,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn drum_backing_stem_auto_se_is_skipped() {
+    fn drum_backing_stem_auto_se_is_scheduled() {
         let text = "\
 #TITLE: stem skip\n\
 #BPM: 120\n\
@@ -314,10 +344,15 @@ mod tests {
         let (chart, _) = parse_dtx_chart(text, "test.dtx", ".").unwrap();
 
         assert_eq!(chart.notes.len(), 1);
-        assert_eq!(chart.scheduled_audio.len(), 1);
-        assert_eq!(chart.scheduled_audio[0].wav_id, 3);
+        assert_eq!(chart.scheduled_audio.len(), 2);
+        assert_eq!(chart.scheduled_audio[0].wav_id, 2);
         assert!(matches!(
             chart.scheduled_audio[0].kind,
+            ScheduledAudioKind::AutoSe { channel: 0x61 }
+        ));
+        assert_eq!(chart.scheduled_audio[1].wav_id, 3);
+        assert!(matches!(
+            chart.scheduled_audio[1].kind,
             ScheduledAudioKind::AutoSe { channel: 0x65 }
         ));
         assert_eq!(
@@ -325,9 +360,34 @@ mod tests {
             WavRole::Drum
         );
         assert_eq!(
+            chart.wav_info.iter().find(|wav| wav.id == 2).unwrap().role,
+            WavRole::Se
+        );
+        assert_eq!(
             chart.wav_info.iter().find(|wav| wav.id == 3).unwrap().role,
             WavRole::Se
         );
+    }
+
+    #[test]
+    fn nosound_channels_become_empty_hit_events() {
+        let text = "\
+#TITLE: nosound\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#WAV02: snare.ogg\n\
+#000B1: 01\n\
+#001B2: 02\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "test.dtx", ".").unwrap();
+
+        assert_eq!(chart.empty_hit_events.len(), 2);
+        assert_eq!(chart.empty_hit_events[0].lane, 3);
+        assert_eq!(chart.empty_hit_events[0].channel, 0xB1);
+        assert_eq!(chart.empty_hit_events[0].wav_id, Some(1));
+        assert_eq!(chart.empty_hit_events[1].lane, 1);
+        assert_eq!(chart.empty_hit_events[1].channel, 0xB2);
+        assert_eq!(chart.empty_hit_events[1].wav_id, Some(2));
     }
 
     #[test]
