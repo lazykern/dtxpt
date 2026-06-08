@@ -1,8 +1,6 @@
-use std::time::Duration;
-
 use bevy::prelude::*;
 use bevy::window::{PresentMode, PrimaryWindow};
-use bevy::winit::{UpdateMode, WinitSettings};
+use bevy::winit::WinitSettings;
 
 use dtxpt::input::{InputBindings, MidiInputState, SystemAction};
 
@@ -15,17 +13,14 @@ pub(crate) fn present_mode_has_vsync(mode: PresentMode) -> bool {
     )
 }
 
-pub(crate) fn winit_settings_for_vsync(vsync: bool) -> WinitSettings {
-    if vsync {
-        let mode = UpdateMode::reactive(Duration::from_secs_f64(1.0 / 60.0));
-        WinitSettings {
-            focused_mode: mode,
-            unfocused_mode: UpdateMode::reactive_low_power(Duration::from_secs_f64(1.0 / 60.0)),
-        }
-    } else {
-        // Uncapped gameplay should not drop to reactive pacing when the terminal steals focus.
-        WinitSettings::continuous()
-    }
+/// Always run continuously. The `present_mode` on the Window (AutoVsync,
+/// AutoNoVsync, Immediate, Mailbox) governs the actual render rate; decoupling
+/// the update rate lets the game logic run as fast as the monitor on 120/144Hz
+/// displays, smoothing note motion and shrinking input latency. The previous
+/// `UpdateMode::reactive(1/60)` cap locked updates to 60Hz even on 144Hz
+/// monitors, producing visible 16.67ms stutter steps in note motion.
+pub(crate) fn winit_settings_for_vsync(_vsync: bool) -> WinitSettings {
+    WinitSettings::continuous()
 }
 
 pub fn toggle_hotkeys(
