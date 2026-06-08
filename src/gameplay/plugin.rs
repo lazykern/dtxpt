@@ -18,6 +18,7 @@ use crate::gameplay::hud::{
 use crate::gameplay::input::{
     PendingLaneInputs, capture_lane_inputs, process_pending_lane_hits,
 };
+use crate::gameplay::interp::{RenderVisualClock, interp_visual_clock};
 use crate::gameplay::judgement::autoplay_hit_notes;
 use crate::gameplay::judgement::miss_late_notes;
 use crate::gameplay::layout::{
@@ -39,6 +40,7 @@ pub struct GameplayPlugin;
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlaybackDiagnostics>()
+            .init_resource::<RenderVisualClock>()
             .init_resource::<crate::audio::RestartGestureState>()
             .init_resource::<PauseUiState>()
             .init_resource::<HudDisplayCache>()
@@ -50,6 +52,10 @@ impl Plugin for GameplayPlugin {
                 |mut next: ResMut<NextState<PauseState>>| next.set(PauseState::Running),
             )
             .add_systems(OnExit(AppState::Playing), cleanup_gameplay)
+            .add_systems(
+                RunFixedMainLoop,
+                interp_visual_clock.in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
+            )
             .add_systems(
                 Update,
                 (
