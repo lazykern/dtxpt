@@ -6,6 +6,7 @@ use crate::app::state::{PauseState, is_paused};
 use crate::audio::*;
 use crate::config::HitSoundPriority;
 use crate::gameplay::clock::ChartClock;
+use crate::gameplay::interp::RenderVisualClock;
 use crate::gameplay::constants::*;
 use crate::gameplay::gauge::apply_gauge;
 use crate::gameplay::input::flash_lane_receptor;
@@ -26,7 +27,7 @@ pub(crate) fn process_lane_hit(
     run: &mut RunState,
     commands: &mut Commands,
     layout: &PlayfieldLayout,
-    clock: &ChartClock,
+    render_clock: &RenderVisualClock,
     frame: u64,
     sound_bank: &SoundBank,
     mix: &AudioMix,
@@ -68,7 +69,7 @@ pub(crate) fn process_lane_hit(
             apply_judgement(run, judgement, delta, chart.notes.len());
             let hit_y = layout.note_y(
                 chart.notes[index].time,
-                clock.predicted_visual,
+                render_clock.current,
                 run.lane_speed,
             );
             spawn_hit_burst(commands, layout, lane, judgement, hit_y);
@@ -253,6 +254,7 @@ pub(crate) fn autoplay_hit_notes(
     mut commands: Commands,
     layout: Res<PlayfieldLayout>,
     clock: Res<ChartClock>,
+    render_clock: Res<RenderVisualClock>,
     mut hit_audio: crate::gameplay::input::LaneHitAudio,
     mut flashes: ParamSet<(
         Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
@@ -291,7 +293,7 @@ pub(crate) fn autoplay_hit_notes(
         apply_judgement(&mut run, judgement, delta, total_notes);
         let hit_y = layout.note_y(
             chart.notes[index].time,
-            clock.predicted_visual,
+            render_clock.current,
             run.lane_speed,
         );
         let lane = chart.notes[index].lane;
