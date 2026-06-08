@@ -67,7 +67,7 @@ pub(crate) fn process_lane_hit(
             apply_judgement(run, judgement, delta, chart.notes.len());
             let hit_y = layout.note_y(
                 chart.notes[index].time,
-                clock.visual_elapsed,
+                clock.visual_smoothed,
                 run.lane_speed,
             );
             spawn_hit_burst(commands, layout, lane, judgement, hit_y);

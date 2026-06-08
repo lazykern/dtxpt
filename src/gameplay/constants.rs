@@ -31,6 +31,10 @@ pub const MAX_CATCHUP_SUB_STEPS: i32 = 4;
 /// Wall-clock CPU budget for the catch-up loop, mirroring osu!lazer's
 /// `max_catchup_milliseconds`. Prevents a single hitch from monopolising the frame.
 pub const MAX_CATCHUP_CPU_MS: u128 = 10;
+/// EMA factor for `ChartClock.visual_smoothed`. New = old + (true - old) * alpha.
+/// alpha=0.5 -> recovers ~75% per frame, fully caught up in ~5 frames. Higher =
+/// less smoothing (more jump visibility), lower = more lag.
+pub const VISUAL_SMOOTHING_ALPHA: f32 = 0.5;
 pub const FRAME_STATS_SMOOTHING: f32 = 0.12;
 pub const SEEK_STEP_SECS: f32 = 5.0;
 pub const SONG_RATE_STEP: f32 = 0.05;

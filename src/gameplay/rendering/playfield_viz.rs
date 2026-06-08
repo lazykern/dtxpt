@@ -103,7 +103,7 @@ pub(crate) fn update_metronome_lines(
 
     for (entity, visual, mut transform, mut sprite) in lines.iter_mut() {
         let beat = &chart.metronome_beats[visual.beat_index];
-        transform.translation.y = layout.note_y(beat.time, clock.visual_elapsed, run.lane_speed);
+        transform.translation.y = layout.note_y(beat.time, clock.visual_smoothed, run.lane_speed);
         let (height, base_alpha) = if beat.downbeat {
             (layout.metronome_line_height * 1.4, 0.55)
         } else {
@@ -152,7 +152,7 @@ pub(crate) fn update_note_visuals(
             NoteState::Pending => {
                 transform.translation.x = layout.lane_x(note.lane);
                 transform.translation.y =
-                    layout.note_y(note.time, clock.visual_elapsed, run.lane_speed);
+                    layout.note_y(note.time, clock.visual_smoothed, run.lane_speed);
                 sprite.custom_size = Some(Vec2::new(layout.note_bar_w(), layout.note_h));
                 let fade = ((transform.translation.y - layout.judge_y) / layout.note_fade_span)
                     .clamp(0.25, 1.0);

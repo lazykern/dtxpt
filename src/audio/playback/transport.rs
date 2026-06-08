@@ -158,6 +158,10 @@ pub(crate) fn sync_elapsed_from_audio(
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
     clock.visual_correction_ms = per_step_correction * 1000.0;
 
+    // EMA smooth the true visual toward the smoothed one used by rendering. Hides
+    // catch-up jumps and song-rate changes from the user. Brief ~5 frame lag.
+    clock.visual_smoothed += (clock.visual_elapsed - clock.visual_smoothed) * VISUAL_SMOOTHING_ALPHA;
+
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
     if run.elapsed >= 0.0 {
@@ -215,6 +219,7 @@ pub(crate) fn set_clock_to_time(clock: &mut ChartClock, run: &mut RunState, targ
     clock.audio_elapsed = target;
     clock.judgement_elapsed = target + run.timing_offset;
     clock.visual_elapsed = clock.judgement_elapsed;
+    clock.visual_smoothed = clock.judgement_elapsed;
     clock.audio_step_ms = 0.0;
     clock.visual_drift_ms = 0.0;
     clock.visual_correction_ms = 0.0;
