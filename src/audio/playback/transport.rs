@@ -135,32 +135,16 @@ pub(crate) fn sync_elapsed_from_audio(
     clock.visual_elapsed += fixed_dt * run.song_playback_rate;
     let drift = target_visual - clock.visual_elapsed;
 
-    // Catch-up. With FixedUpdate, per-tick drift is bounded by BASS audio buffer
-    // latency (~20ms), so a single sub-step is enough in the common case. The
-    // sub-step loop is retained for heavy-hitch cases (e.g. a debug build pause
-    // resume, or a deferred asset load spike).
-    let per_step_correction = if drift.abs() > CATCHUP_SUB_STEP_SECS {
-        let n = (drift.abs() / CATCHUP_SUB_STEP_SECS).ceil() as i32;
-        let n = n.clamp(1, MAX_CATCHUP_SUB_STEPS);
-        let per_step = drift / n as f32;
-        let stopwatch = std::time::Instant::now();
-        for _ in 0..n {
-            if stopwatch.elapsed().as_millis() > MAX_CATCHUP_CPU_MS {
-                break;
-            }
-            clock.visual_elapsed += per_step;
-        }
-        drift
-    } else {
-        let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
-        let mut correction = drift * catchup;
-        correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
-        clock.visual_elapsed += correction;
-        correction
-    };
+    // Per-tick catch-up. FixedUpdate bounds the per-tick dt to the timestep
+    // (16.67ms at 60Hz), so the worst-case drift is one tick + BASS audio
+    // buffer latency. A single sub-step is sufficient; no loop needed.
+    let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
+    let mut correction = drift * catchup;
+    correction = correction.clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
+    clock.visual_elapsed += correction;
 
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
-    clock.visual_correction_ms = per_step_correction * 1000.0;
+    clock.visual_correction_ms = correction * 1000.0;
 
     // Sub-frame visual interpolation is computed by `interp_visual_clock` in
     // `RunFixedMainLoop::AfterFixedMainLoop` from `prev_visual_elapsed` /

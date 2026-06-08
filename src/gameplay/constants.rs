@@ -45,6 +45,11 @@ pub const VISUAL_SMOOTHING_ALPHA_BIG: f32 = 0.3;
 // between fixed-tick boundary values (prev_visual_elapsed / visual_elapsed)
 // using Time<Fixed>::overstep_fraction() as alpha. No smoothing is needed
 // because the interpolation itself is the smoothing.
+
+// Catch-up sub-step loop was removed when the schedule moved to FixedUpdate.
+// Per-tick dt is bounded to the timestep, so a single sub-step is enough.
+// MAX_CATCHUP_SUB_STEPS, MAX_CATCHUP_CPU_MS, CATCHUP_SUB_STEP_SECS were
+// only used by the loop.
 pub const FRAME_STATS_SMOOTHING: f32 = 0.12;
 pub const SEEK_STEP_SECS: f32 = 5.0;
 pub const SONG_RATE_STEP: f32 = 0.05;
