@@ -183,6 +183,7 @@ fn find_nearest_pending_note_index(
     best.map(|(index, _)| index)
 }
 
+#[cfg(test)]
 fn find_nearest_pending_note<'a>(
     notes: &'a [dtxpt::chart::ChartNote],
     lanes: &[usize],
