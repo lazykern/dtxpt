@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 
 use crate::app::state::{AppState, PauseState, overlay_closed};
@@ -39,6 +41,11 @@ pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
+        // FixedUpdate cadence. 60Hz matches monitor refresh at 60fps and the
+        // chart/SE timing assumptions. Default Bevy is 64Hz (a power of 2 for
+        // lossless f32 conversion); we override to 60Hz for rhythm-game
+        // consistency.
+        app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(1.0 / 60.0)));
         app.init_resource::<PlaybackDiagnostics>()
             .init_resource::<RenderVisualClock>()
             .init_resource::<crate::audio::RestartGestureState>()
