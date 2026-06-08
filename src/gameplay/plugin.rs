@@ -15,7 +15,9 @@ use crate::gameplay::hud::{
     HudDisplayCache, sync_debug_hud_visibility, update_hud, update_judgement_text,
     update_render_stats,
 };
-use crate::gameplay::input::handle_input;
+use crate::gameplay::input::{
+    PendingLaneInputs, capture_lane_inputs, process_pending_lane_hits,
+};
 use crate::gameplay::judgement::miss_late_notes;
 use crate::gameplay::layout::{
     apply_key_cap_layout, apply_playfield_layout, sync_playfield_layout,
@@ -39,6 +41,7 @@ impl Plugin for GameplayPlugin {
             .init_resource::<crate::audio::RestartGestureState>()
             .init_resource::<PauseUiState>()
             .init_resource::<HudDisplayCache>()
+            .init_resource::<PendingLaneInputs>()
             .add_systems(OnEnter(AppState::Playing), setup_gameplay)
             .add_systems(OnEnter(AppState::Playing), reset_playback_diagnostics)
             .add_systems(
@@ -79,12 +82,24 @@ impl Plugin for GameplayPlugin {
                     toggle_hotkeys
                         .after(sync_pause_focus)
                         .run_if(overlay_closed),
-                    handle_input.after(toggle_hotkeys),
-                    miss_late_notes.after(handle_input),
-                    cleanup_active_sounds.after(handle_input),
-                    schedule_auto_se.after(handle_input),
+                    miss_late_notes.after(process_pending_lane_hits),
+                    cleanup_active_sounds.after(process_pending_lane_hits),
+                    schedule_auto_se.after(process_pending_lane_hits),
                     schedule_metronome.after(sync_elapsed_from_audio),
                     merge_decoded_audio,
+                )
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                (
+                    capture_lane_inputs
+                        .after(sync_elapsed_from_audio)
+                        .after(toggle_playback_pause)
+                        .run_if(overlay_closed),
+                    process_pending_lane_hits
+                        .after(capture_lane_inputs)
+                        .after(toggle_hotkeys),
                 )
                     .run_if(in_state(AppState::Playing)),
             )
