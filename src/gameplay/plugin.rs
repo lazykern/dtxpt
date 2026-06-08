@@ -18,6 +18,7 @@ use crate::gameplay::hud::{
 use crate::gameplay::input::{
     PendingLaneInputs, capture_lane_inputs, process_pending_lane_hits,
 };
+use crate::gameplay::judgement::autoplay_hit_notes;
 use crate::gameplay::judgement::miss_late_notes;
 use crate::gameplay::layout::{
     apply_key_cap_layout, apply_playfield_layout, sync_playfield_layout,
@@ -99,6 +100,9 @@ impl Plugin for GameplayPlugin {
                         .run_if(overlay_closed),
                     process_pending_lane_hits
                         .after(capture_lane_inputs)
+                        .after(toggle_hotkeys),
+                    autoplay_hit_notes
+                        .after(sync_elapsed_from_audio)
                         .after(toggle_hotkeys),
                 )
                     .run_if(in_state(AppState::Playing)),

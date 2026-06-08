@@ -22,7 +22,7 @@ pub use mutate::{
     lane_binding_indices, remove_lane_binding_at, reset_system_keyboard_binding,
     set_system_keyboard_binding,
 };
-pub use runtime::InputBindings;
+pub use runtime::{InputBindings, LaneTriggerSource};
 pub use types::{
     BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig, InputSourceConfig,
     LANE_COUNT, MidiDeviceFilter, PlayMode, SYSTEM_ACTION_SETTINGS_ORDER, SystemAction,

@@ -29,7 +29,7 @@ pub fn song_rate_change_allowed_during_play(active_play_mode: Option<PlayMode>) 
     match active_play_mode {
         None => true,
         Some(PlayMode::Practice) => true,
-        Some(PlayMode::Normal) => false,
+        Some(PlayMode::Normal | PlayMode::Auto) => false,
     }
 }
 

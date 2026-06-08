@@ -272,6 +272,7 @@ pub enum PlayMode {
     #[default]
     Normal,
     Practice,
+    Auto,
 }
 
 impl PlayMode {
@@ -279,6 +280,7 @@ impl PlayMode {
         match self {
             PlayMode::Normal => "Normal",
             PlayMode::Practice => "Practice",
+            PlayMode::Auto => "Auto",
         }
     }
 
@@ -286,13 +288,20 @@ impl PlayMode {
         match self {
             PlayMode::Normal => "Gauge can fail the stage on poor/miss judgements.",
             PlayMode::Practice => "No stage fail — practice charts without ending early.",
+            PlayMode::Auto => "Autoplay — lane hits are simulated. Use as a test rig or to watch a chart.",
         }
     }
 
     pub fn next(self) -> Self {
         match self {
             PlayMode::Normal => PlayMode::Practice,
-            PlayMode::Practice => PlayMode::Normal,
+            PlayMode::Practice => PlayMode::Auto,
+            PlayMode::Auto => PlayMode::Normal,
         }
+    }
+
+    /// Whether lane input is processed. False for Auto (autoplay drives hits).
+    pub fn player_drives_lanes(self) -> bool {
+        !matches!(self, PlayMode::Auto)
     }
 }

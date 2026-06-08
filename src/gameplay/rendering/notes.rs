@@ -70,7 +70,7 @@ pub fn spawn_note_visual(
         ),
         Transform::from_xyz(
             layout.lane_x(note.lane),
-            layout.note_y(note.time, clock.visual_smoothed, run.lane_speed),
+            layout.note_y(note.time, clock.predicted_visual, run.lane_speed),
             1.0,
         ),
         NoteVisual { note_index },

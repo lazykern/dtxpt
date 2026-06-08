@@ -46,13 +46,47 @@ impl InputBindings {
         keyboard: &ButtonInput<KeyCode>,
         midi_events: &[MidiNoteEvent],
     ) -> bool {
-        let Some(target_lane) = DrumLane::from_index(lane) else {
-            return false;
-        };
-        self.bindings.iter().any(|binding| {
-            binding.target == BindingTarget::DrumLane(target_lane)
-                && binding_triggered(&binding.source, keyboard, midi_events)
-        })
+        self.lane_triggered_with_source(lane, keyboard, midi_events).is_some()
+    }
+
+    /// Returns the first matching binding source for the lane, so callers can
+    /// access the underlying MIDI event's `received_at` for input-timing
+    /// compensation. Keyboard sources don't carry a per-event timestamp so
+    /// the caller must capture one separately.
+    pub fn lane_triggered_with_source<'a>(
+        &'a self,
+        lane: usize,
+        keyboard: &ButtonInput<KeyCode>,
+        midi_events: &'a [MidiNoteEvent],
+    ) -> Option<LaneTriggerSource<'a>> {
+        let target_lane = DrumLane::from_index(lane)?;
+        for binding in &self.bindings {
+            if binding.target != BindingTarget::DrumLane(target_lane) {
+                continue;
+            }
+            match &binding.source {
+                InputSource::Keyboard(key) => {
+                    if keyboard.just_pressed(*key) {
+                        return Some(LaneTriggerSource::Keyboard);
+                    }
+                }
+                InputSource::MidiNote {
+                    device,
+                    note,
+                    channel,
+                } => {
+                    for event in midi_events.iter() {
+                        if device.matches(&event.device_name)
+                            && event.note == *note
+                            && channel.is_none_or(|expected| expected == event.channel)
+                        {
+                            return Some(LaneTriggerSource::Midi { event });
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn action_just_pressed(
@@ -114,4 +148,10 @@ pub(crate) fn binding_triggered(
                 && channel.is_none_or(|expected| expected == event.channel)
         }),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LaneTriggerSource<'a> {
+    Keyboard,
+    Midi { event: &'a MidiNoteEvent },
 }

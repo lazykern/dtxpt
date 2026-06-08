@@ -1,20 +1,25 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bevy::prelude::*;
 use midir::{Ignore, MidiInput, MidiInputConnection};
 
 use crate::util::diag;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct MidiNoteEvent {
     pub device_name: String,
     pub channel: u8,
     pub note: u8,
     pub velocity: u8,
+    /// midir monotonic timestamp in ms (per-port, not wall-clock). Kept for
+    /// diagnostics; the authoritative event time is `received_at`.
     pub stamp: u64,
+    /// Wall-clock instant when the midir callback fired. Used for
+    /// sub-frame input timing parity with the keyboard path.
+    pub received_at: Instant,
 }
 
 #[derive(Resource, Default)]
@@ -217,6 +222,7 @@ fn connect_port(
                     note: message[1],
                     velocity,
                     stamp,
+                    received_at: Instant::now(),
                 }));
             },
             (),

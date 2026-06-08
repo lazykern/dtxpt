@@ -88,7 +88,7 @@ pub fn spawn_metronome_line(
         Sprite::from_color(color, Vec2::new(layout.judge_line_width, height)),
         Transform::from_xyz(
             0.0,
-            layout.note_y(beat.time, clock.visual_smoothed, run.lane_speed),
+            layout.note_y(beat.time, clock.predicted_visual, run.lane_speed),
             0.0,
         ),
         MetronomeLineVisual { beat_index },

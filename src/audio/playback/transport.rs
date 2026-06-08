@@ -172,6 +172,10 @@ pub(crate) fn sync_elapsed_from_audio(
         VISUAL_SMOOTHING_ALPHA_NORMAL
     };
     clock.visual_smoothed += (clock.visual_elapsed - clock.visual_smoothed) * alpha;
+    // One-frame render-ahead prediction. Render systems consume this so the
+    // user sees where the audio will be at the start of the NEXT render frame,
+    // not where it was at the start of THIS one.
+    clock.predicted_visual = clock.visual_smoothed + VISUAL_PREDICT_LEAD_SECS * run.song_playback_rate;
 
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
@@ -232,6 +236,7 @@ pub(crate) fn set_clock_to_time(clock: &mut ChartClock, run: &mut RunState, targ
     clock.visual_elapsed = clock.judgement_elapsed;
     clock.visual_smoothed = clock.judgement_elapsed;
     clock.prev_visual_smoothed = clock.judgement_elapsed;
+    clock.predicted_visual = clock.judgement_elapsed;
     clock.audio_step_ms = 0.0;
     clock.visual_drift_ms = 0.0;
     clock.visual_correction_ms = 0.0;

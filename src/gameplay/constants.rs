@@ -43,6 +43,12 @@ pub const VISUAL_SMOOTHING_ALPHA_BIG: f32 = 0.3;
 /// Jump sizes (seconds) that trigger medium/big alpha.
 pub const VISUAL_SMOOTH_MEDIUM_THRESHOLD: f32 = 0.020;
 pub const VISUAL_SMOOTH_BIG_THRESHOLD: f32 = 0.040;
+/// Lead time (seconds) for the render-ahead prediction. The visual render
+/// shows `visual_smoothed + VISUAL_PREDICT_LEAD_SECS * song_rate`, which
+/// approximates the audio-clock position at the start of the next render
+/// frame. Hides 1 frame of input latency at the cost of a small lead
+/// that the user's `timing_offset` can compensate for.
+pub const VISUAL_PREDICT_LEAD_SECS: f32 = 0.010;
 pub const FRAME_STATS_SMOOTHING: f32 = 0.12;
 pub const SEEK_STEP_SECS: f32 = 5.0;
 pub const SONG_RATE_STEP: f32 = 0.05;

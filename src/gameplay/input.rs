@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+use std::time::Instant;
+
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_kira_audio::prelude::*;
@@ -14,24 +16,26 @@ use crate::gameplay::rendering::{keyboard_viz, playfield_viz::lane_receptor_colo
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, chart_notes_complete};
 use dtxpt::input::lanes::LANES;
-use dtxpt::input::{InputBindings, MidiInputState};
+use dtxpt::input::bindings::PlayMode;
+use dtxpt::input::{InputBindings, LaneTriggerSource, MidiInputState};
 
 #[derive(SystemParam)]
 pub(crate) struct LaneHitAudio<'w> {
-    frame: Res<'w, AudioFrame>,
-    sound_bank: Res<'w, SoundBank>,
-    mix: Res<'w, AudioMix>,
-    audio: Res<'w, Audio>,
-    audio_instances: ResMut<'w, Assets<AudioInstance>>,
-    active: ResMut<'w, ActiveSounds>,
-    rng: ResMut<'w, GameRng>,
+    pub(crate) frame: Res<'w, AudioFrame>,
+    pub(crate) sound_bank: Res<'w, SoundBank>,
+    pub(crate) mix: Res<'w, AudioMix>,
+    pub(crate) audio: Res<'w, Audio>,
+    pub(crate) audio_instances: ResMut<'w, Assets<AudioInstance>>,
+    pub(crate) active: ResMut<'w, ActiveSounds>,
+    pub(crate) rng: ResMut<'w, GameRng>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct LaneHitEvent {
     pub lane: usize,
-    /// Wall-clock seconds (Time::elapsed_secs) when the trigger was first observed.
-    pub wall_time: f32,
+    /// Wall-clock instant when the trigger was first observed (or for MIDI,
+    /// when the midir callback fired). Used to compute audio_clock_at_event.
+    pub wall_time: Instant,
 }
 
 #[derive(Resource, Default)]
@@ -43,8 +47,11 @@ pub struct PendingLaneInputs {
 /// Runs after `sync_elapsed_from_audio` and `toggle_playback_pause` so it sees the
 /// current pause state. Input state for lanes only — system actions (pause, restart, etc.)
 /// still use their own detection paths in the original system order.
+///
+/// Wall-clock is captured at the moment of capture for keyboard (this system),
+/// or at the moment the midir callback fired for MIDI (plumbed through the
+/// `MidiNoteEvent::received_at` Instant). Both share the same `Instant` timebase.
 pub(crate) fn capture_lane_inputs(
-    time: Res<Time>,
     pause_state: Res<State<PauseState>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     midi: Res<MidiInputState>,
@@ -54,11 +61,13 @@ pub(crate) fn capture_lane_inputs(
     if is_paused(pause_state.get()) {
         return;
     }
-    let now = time.elapsed_secs();
-    let triggered_midi = &midi.note_on_events;
     for lane in 0..LANES.len() {
-        if bindings.lane_triggered(lane, &keyboard, triggered_midi) {
-            pending.events.push(LaneHitEvent { lane, wall_time: now });
+        if let Some(source) = bindings.lane_triggered_with_source(lane, &keyboard, &midi.note_on_events) {
+            let wall_time = match source {
+                LaneTriggerSource::Keyboard => Instant::now(),
+                LaneTriggerSource::Midi { event } => event.received_at,
+            };
+            pending.events.push(LaneHitEvent { lane, wall_time });
         }
     }
 }
@@ -67,8 +76,11 @@ pub(crate) fn capture_lane_inputs(
 /// by subtracting (now_wall - event_wall) * song_rate from the current audio clock.
 /// This compensates for the per-frame processing delay between key observation
 /// (early in the frame) and judgement processing (later in the same frame).
+///
+/// MIDI events skip the per-frame poll delay entirely: `event.wall_time` is the
+/// moment the midir callback fired (midir thread, before PreUpdate), so the wall
+/// delta captures the full input->judgement latency for MIDI as well as keyboard.
 pub(crate) fn process_pending_lane_hits(
-    time: Res<Time>,
     pause_state: Res<State<PauseState>>,
     mut chart: ResMut<Chart>,
     mut run: ResMut<RunState>,
@@ -94,6 +106,7 @@ pub(crate) fn process_pending_lane_hits(
         || run.failed
         || is_paused(pause_state.get())
         || chart_notes_complete(&chart.notes)
+        || run.play_mode == PlayMode::Auto
     {
         // discard any stale captures that snuck in across a state change
         pending.events.clear();
@@ -104,14 +117,14 @@ pub(crate) fn process_pending_lane_hits(
         return;
     }
 
-    let now_wall = time.elapsed_secs();
+    let now_wall = Instant::now();
     let song_rate = run.song_playback_rate;
     let audio_now = clock.audio_elapsed;
     let timing_offset = run.timing_offset;
 
     let events = std::mem::take(&mut pending.events);
     for event in events {
-        let wall_delta = (now_wall - event.wall_time).max(0.0);
+        let wall_delta = now_wall.saturating_duration_since(event.wall_time).as_secs_f32();
         let audio_at_event = audio_now - wall_delta * song_rate;
         let elapsed = audio_at_event + timing_offset;
 

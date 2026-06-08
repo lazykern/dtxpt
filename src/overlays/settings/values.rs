@@ -64,7 +64,8 @@ pub(crate) fn apply_setting_delta(
                 config.play_mode.next()
             } else {
                 match config.play_mode {
-                    PlayMode::Normal => PlayMode::Practice,
+                    PlayMode::Normal => PlayMode::Auto,
+                    PlayMode::Auto => PlayMode::Practice,
                     PlayMode::Practice => PlayMode::Normal,
                 }
             };

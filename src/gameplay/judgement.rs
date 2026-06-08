@@ -13,6 +13,7 @@ use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::playfield_viz::spawn_hit_burst;
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete, resolve_empty_hit_sound};
+use dtxpt::input::bindings::PlayMode;
 use dtxpt::input::lanes::{
     PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
 };
@@ -67,7 +68,7 @@ pub(crate) fn process_lane_hit(
             apply_judgement(run, judgement, delta, chart.notes.len());
             let hit_y = layout.note_y(
                 chart.notes[index].time,
-                clock.visual_smoothed,
+                clock.predicted_visual,
                 run.lane_speed,
             );
             spawn_hit_burst(commands, layout, lane, judgement, hit_y);
@@ -235,6 +236,84 @@ pub fn miss_late_notes(
             Judgement::POOR_WINDOW,
             chart.notes.len(),
         );
+    }
+}
+
+/// Autoplay: when run.play_mode == Auto, simulate a perfect hit on every pending
+/// note whose audio-clock time has passed. Bypasses the input layer entirely.
+///
+/// Directly applies the Perfect judgement + visual burst + drum sound for each
+/// due note, mirroring the success branch of process_lane_hit but without the
+/// lane-search (the target note is pre-selected).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn autoplay_hit_notes(
+    pause_state: Res<State<PauseState>>,
+    mut chart: ResMut<Chart>,
+    mut run: ResMut<RunState>,
+    mut commands: Commands,
+    layout: Res<PlayfieldLayout>,
+    clock: Res<ChartClock>,
+    mut hit_audio: crate::gameplay::input::LaneHitAudio,
+    mut flashes: ParamSet<(
+        Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
+    )>,
+) {
+    if run.play_mode != PlayMode::Auto
+        || run.finished
+        || run.failed
+        || is_paused(pause_state.get())
+        || chart_notes_complete(&chart.notes)
+    {
+        return;
+    }
+
+    let now_audio = clock.audio_elapsed + run.timing_offset;
+    let total_notes = chart.notes.len();
+
+    // Collect due notes first to avoid borrow conflicts (we mutate chart below).
+    let mut due: Vec<usize> = Vec::new();
+    for (i, note) in chart.notes.iter().enumerate() {
+        if note.state == NoteState::Pending && now_audio >= note.time {
+            due.push(i);
+        }
+    }
+    if due.is_empty() {
+        return;
+    }
+    // Process in chart order; multiple notes can be due in the same frame
+    // after a slow frame or a seek into dense section.
+    due.sort_unstable();
+
+    for index in due {
+        let delta = 0.0_f32; // exact hit -> Perfect
+        let judgement = Judgement::Perfect;
+        chart.notes[index].state = NoteState::Hit(judgement);
+        apply_judgement(&mut run, judgement, delta, total_notes);
+        let hit_y = layout.note_y(
+            chart.notes[index].time,
+            clock.predicted_visual,
+            run.lane_speed,
+        );
+        let lane = chart.notes[index].lane;
+        spawn_hit_burst(&mut commands, &layout, lane, judgement, hit_y);
+        flash_lane_receptor(lane, &mut flashes.p0());
+        if run.drum_hit_sound {
+            let sound_note = &chart.notes[index];
+            play_drum_sound(
+                sound_note.wav_id,
+                sound_note.channel,
+                lane,
+                None,
+                run.song_playback_rate,
+                hit_audio.frame.0,
+                run.lp_muting,
+                &hit_audio.sound_bank,
+                &hit_audio.mix,
+                &hit_audio.audio,
+                &mut hit_audio.audio_instances,
+                &mut hit_audio.active,
+            );
+        }
     }
 }
 
