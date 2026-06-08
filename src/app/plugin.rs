@@ -98,7 +98,11 @@ impl Plugin for DtxptPlugin {
                             present_mode: if vsync {
                                 PresentMode::AutoVsync
                             } else {
-                                PresentMode::AutoNoVsync
+                                // AutoNoVsync capped to display rate; Immediate is
+                                // unbuffered single-present for minimum input latency.
+                                // Tearing is acceptable for rhythm games where the eye
+                                // is on the judgement line.
+                                PresentMode::Immediate
                             },
                             ..default()
                         }

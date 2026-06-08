@@ -71,7 +71,7 @@ pub fn toggle_hotkeys(
         return;
     };
     window.present_mode = if present_mode_has_vsync(window.present_mode) {
-        PresentMode::AutoNoVsync
+        PresentMode::Immediate
     } else {
         PresentMode::AutoVsync
     };
