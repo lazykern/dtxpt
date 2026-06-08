@@ -18,7 +18,8 @@ pub const TARGET_SCORE: f32 = 1_000_000.0;
 pub const VISUAL_SNAP_THRESHOLD_SECS: f32 = 0.050;
 pub const VISUAL_CORRECTION_GAIN: f32 = 10.0;
 /// Max visual clock catch-up per frame; avoids visible note scroll jumps.
-pub const MAX_VISUAL_CORRECTION_SECS: f32 = 0.012;
+/// 1.2 frames at 60Hz, allows symmetric lead/lag for input-echo compensation.
+pub const MAX_VISUAL_CORRECTION_SECS: f32 = 0.020;
 /// Ignore small backward BGM position reads vs the running chart clock.
 pub const MAX_AUDIO_BACKSTEP_SECS: f32 = 0.008;
 pub const FRAME_STATS_SMOOTHING: f32 = 0.12;

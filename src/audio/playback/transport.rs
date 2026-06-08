@@ -102,7 +102,19 @@ pub(crate) fn sync_elapsed_from_audio(
             .and_then(|inst| inst.state().position())
         {
             let measured = bgm.start_time + pos as f32;
-            if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
+            // BASS invalid-time hotfix: ignore audio position reads that jump >500ms vs
+            // the running clock unless the game itself stalled. Without this, a buffer
+            // underrun or stream reinit can drag the audio clock backwards ~20ms/frame
+            // and visibly desync the visual.
+            let bass_glitch = (measured - previous_audio).abs() > 0.5 && frame_dt <= 0.5;
+            if bass_glitch {
+                warn!(
+                    "BASS: ignoring suspicious position read measured={:.3} prev={:.3} delta={:.3}",
+                    measured,
+                    previous_audio,
+                    measured - previous_audio,
+                );
+            } else if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
                 let drift = measured - next_audio;
                 let catchup = (VISUAL_CORRECTION_GAIN * frame_dt).clamp(0.0, 1.0);
                 let correction = (drift * catchup)
