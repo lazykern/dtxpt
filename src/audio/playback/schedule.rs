@@ -210,10 +210,14 @@ pub(crate) fn update_finished_state(
 
 pub(crate) fn check_song_finished(
     chart: Res<Chart>,
+    pause_state: Res<State<PauseState>>,
     bgm_instance: Option<Res<BgmInstance>>,
     audio_instances: Res<Assets<AudioInstance>>,
     mut run: ResMut<RunState>,
 ) {
+    if is_paused(pause_state.get()) {
+        return;
+    }
     update_finished_state(
         &mut run,
         &chart.notes,
