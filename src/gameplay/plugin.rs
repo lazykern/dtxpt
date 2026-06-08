@@ -64,10 +64,15 @@ impl Plugin for GameplayPlugin {
                 interp_visual_clock.in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
             )
             .add_systems(
+                PreUpdate,
+                capture_lane_inputs
+                    .after(bevy::input::InputSystems)
+                    .run_if(in_state(AppState::Playing).and(overlay_closed)),
+            )
+            .add_systems(
                 FixedUpdate,
                 (
                     sync_elapsed_from_audio,
-                    capture_lane_inputs.run_if(overlay_closed),
                     process_pending_lane_hits,
                     autoplay_hit_notes,
                     miss_late_notes,
