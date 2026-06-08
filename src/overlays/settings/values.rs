@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::Window;
 use bevy::winit::WinitSettings;
+use bevy_framepace::FramepaceSettings;
 
 use dtxpt::input::{InputBindings, MidiInputState, PlayMode, SystemAction};
 
@@ -15,6 +16,7 @@ use super::rows::SettingRow;
 pub(crate) fn apply_fps_cap(
     window: Option<&mut Window>,
     winit: Option<&mut WinitSettings>,
+    framepace: Option<&mut FramepaceSettings>,
     cap: FpsCap,
 ) {
     if let Some(window) = window {
@@ -22,6 +24,9 @@ pub(crate) fn apply_fps_cap(
     }
     if let Some(winit) = winit {
         *winit = cap.winit_settings();
+    }
+    if let Some(framepace) = framepace {
+        framepace.limiter = cap.limiter();
     }
 }
 
@@ -94,7 +99,7 @@ pub(crate) fn apply_setting_delta(
         }
         SettingRow::FpsCap => {
             config.fps_cap = config.fps_cap.next();
-            apply_fps_cap(window, winit, config.fps_cap);
+            apply_fps_cap(window, winit, None, config.fps_cap);
         }
         SettingRow::MetronomeSound => {
             config.metronome_sound = !config.metronome_sound;

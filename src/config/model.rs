@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PresentMode;
-use bevy::winit::{UpdateMode, WinitSettings};
+use bevy::winit::WinitSettings;
+use bevy_framepace::Limiter;
 use dtxpt::input::bindings::{InputBindingConfig, PlayMode, default_input_bindings};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -55,6 +56,7 @@ impl FpsCap {
 
     /// Frame interval for hard caps. `Vsync` and `Unlimited` have no fixed
     /// interval and use `WinitSettings::game_app_mode()`.
+    #[allow(dead_code)]
     pub fn frame_duration(self) -> Option<Duration> {
         match self {
             Self::Cap60 => Some(Duration::from_secs_f64(1.0 / 60.0)),
@@ -66,12 +68,26 @@ impl FpsCap {
     }
 
     pub fn winit_settings(self) -> WinitSettings {
-        match self.frame_duration() {
-            Some(d) => WinitSettings {
-                focused_mode: UpdateMode::reactive(d),
-                unfocused_mode: UpdateMode::reactive(d),
-            },
-            None => WinitSettings::continuous(),
+        // Frame pacing is handled by `bevy_framepace`, which sleeps the
+        // main thread at the start of the event loop to enforce the cap.
+        // WinitSettings just controls when Update fires within the loop.
+        // Continuous lets Update run as fast as the loop allows, then
+        // bevy_framepace throttles the next iteration.
+        WinitSettings::continuous()
+    }
+
+    /// Frame limiter for `bevy_framepace`. Caps the effective frame rate.
+    /// - Vsync: monitor refresh (Auto, dynamically updates on monitor change)
+    /// - Cap*: hard cap (Manual)
+    /// - Unlimited: no cap (Off)
+    pub fn limiter(self) -> Limiter {
+        match self {
+            Self::Vsync => Limiter::Auto,
+            Self::Cap60 => Limiter::from_framerate(60.0),
+            Self::Cap120 => Limiter::from_framerate(120.0),
+            Self::Cap144 => Limiter::from_framerate(144.0),
+            Self::Cap240 => Limiter::from_framerate(240.0),
+            Self::Unlimited => Limiter::Off,
         }
     }
 
@@ -221,5 +237,29 @@ mod tests {
         assert!(FpsCap::Vsync.has_vsync());
         assert!(!FpsCap::Cap60.has_vsync());
         assert!(!FpsCap::Unlimited.has_vsync());
+    }
+
+    #[test]
+    fn fps_cap_limiter_matches_oscillation_expectations() {
+        // Vsync -> monitor refresh (Auto); Cap* -> Manual with right duration;
+        // Unlimited -> Off.
+        assert!(matches!(FpsCap::Vsync.limiter(), bevy_framepace::Limiter::Auto));
+        assert!(matches!(FpsCap::Unlimited.limiter(), bevy_framepace::Limiter::Off));
+        for (cap, hz) in [
+            (FpsCap::Cap60, 60.0),
+            (FpsCap::Cap120, 120.0),
+            (FpsCap::Cap144, 144.0),
+            (FpsCap::Cap240, 240.0),
+        ] {
+            match cap.limiter() {
+                bevy_framepace::Limiter::Manual(d) => {
+                    let expected = Duration::from_secs_f64(1.0 / hz);
+                    // 1us tolerance for float rounding
+                    let diff = if d > expected { d - expected } else { expected - d };
+                    assert!(diff < Duration::from_micros(1), "{:?} vs {:?}", d, expected);
+                }
+                other => panic!("expected Manual, got {:?}", other),
+            }
+        }
     }
 }

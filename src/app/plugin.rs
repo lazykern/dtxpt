@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_brp_extras::BrpExtrasPlugin;
+use bevy_framepace::{FramepacePlugin, FramepaceSettings};
 
 use bevy::window::{MonitorSelection, Window, WindowMode, WindowPlugin};
 use bevy_kira_audio::prelude::*;
@@ -59,6 +60,9 @@ impl Plugin for DtxptPlugin {
 
         app.insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.12)))
             .insert_resource(fps_cap.winit_settings())
+            .insert_resource(FramepaceSettings {
+                limiter: fps_cap.limiter(),
+            })
             .insert_resource(config)
             .insert_resource(input_bindings)
             .insert_resource(audio_mix)
@@ -114,6 +118,7 @@ impl Plugin for DtxptPlugin {
             ScreensPlugin,
             OverlaysPlugin,
             GameplayPlugin,
+            FramepacePlugin,
             BrpExtrasPlugin::default(),
         ));
     }

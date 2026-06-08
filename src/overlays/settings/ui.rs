@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, Window};
 use bevy::winit::WinitSettings;
+use bevy_framepace::FramepaceSettings;
 
 use dtxpt::input::lanes::LANES;
 
@@ -27,11 +28,17 @@ pub fn setup_global(
     config: Res<GameConfig>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut winit: ResMut<WinitSettings>,
+    mut framepace: ResMut<FramepaceSettings>,
     mut layout: ResMut<PlayfieldLayout>,
 ) {
     if let Ok(mut window) = windows.single_mut() {
         *layout = PlayfieldLayout::from_window(&window);
-        apply_fps_cap(Some(&mut window), Some(&mut winit), config.fps_cap);
+        apply_fps_cap(
+            Some(&mut window),
+            Some(&mut winit),
+            Some(&mut framepace),
+            config.fps_cap,
+        );
     }
     commands.spawn((Camera2d, IsDefaultUiCamera));
 

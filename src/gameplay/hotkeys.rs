@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy_framepace::FramepaceSettings;
 
 use dtxpt::input::{InputBindings, MidiInputState, SystemAction};
 
@@ -14,6 +15,7 @@ pub fn toggle_hotkeys(
     mut config: ResMut<GameConfig>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut winit: ResMut<bevy::winit::WinitSettings>,
+    mut framepace: ResMut<FramepaceSettings>,
 ) {
     if bindings.action_just_pressed(
         SystemAction::ToggleMetronomeSound,
@@ -57,5 +59,6 @@ pub fn toggle_hotkeys(
         window.present_mode = cap.present_mode();
     }
     *winit = cap.winit_settings();
-    info!("fps cap set to {} ({:?})", cap.label(), cap.present_mode());
+    framepace.limiter = cap.limiter();
+    info!("fps cap set to {} ({})", cap.label(), framepace.limiter);
 }
