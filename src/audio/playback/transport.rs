@@ -131,7 +131,6 @@ pub(crate) fn sync_elapsed_from_audio(
     // Save prev before advancing; the AfterFixedMainLoop interpolator uses these
     // to render sub-frame motion (lerp(prev, current, alpha)).
     clock.prev_visual_elapsed = clock.visual_elapsed;
-    clock.prev_visual_smoothed = clock.visual_smoothed;
     let target_visual = clock.judgement_elapsed;
     clock.visual_elapsed += fixed_dt * run.song_playback_rate;
     let drift = target_visual - clock.visual_elapsed;
@@ -163,23 +162,10 @@ pub(crate) fn sync_elapsed_from_audio(
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
     clock.visual_correction_ms = per_step_correction * 1000.0;
 
-    // Adaptive EMA smoothing. Big jumps (catch-up from heavy hitch) use a slow
-    // alpha to fully hide the teleport; small normal-frame steps use a fast alpha
-    // for minimal lag. Tracks prev_visual_smoothed for diagnostics + future
-    // sub-frame interpolation hook.
-    let jump = (clock.visual_elapsed - clock.visual_smoothed).abs();
-    let alpha = if jump > VISUAL_SMOOTH_BIG_THRESHOLD {
-        VISUAL_SMOOTHING_ALPHA_BIG
-    } else if jump > VISUAL_SMOOTH_MEDIUM_THRESHOLD {
-        VISUAL_SMOOTHING_ALPHA_MEDIUM
-    } else {
-        VISUAL_SMOOTHING_ALPHA_NORMAL
-    };
-    clock.visual_smoothed += (clock.visual_elapsed - clock.visual_smoothed) * alpha;
-    // One-frame render-ahead prediction. Render systems consume this so the
-    // user sees where the audio will be at the start of the NEXT render frame,
-    // not where it was at the start of THIS one.
-    clock.predicted_visual = clock.visual_smoothed + VISUAL_PREDICT_LEAD_SECS * run.song_playback_rate;
+    // Sub-frame visual interpolation is computed by `interp_visual_clock` in
+    // `RunFixedMainLoop::AfterFixedMainLoop` from `prev_visual_elapsed` /
+    // `visual_elapsed` / `Time<Fixed>::overstep_fraction()`. No EMA needed:
+    // the alpha interpolation IS the smoothing.
 
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
@@ -238,9 +224,7 @@ pub(crate) fn set_clock_to_time(clock: &mut ChartClock, run: &mut RunState, targ
     clock.audio_elapsed = target;
     clock.judgement_elapsed = target + run.timing_offset;
     clock.visual_elapsed = clock.judgement_elapsed;
-    clock.visual_smoothed = clock.judgement_elapsed;
-    clock.prev_visual_smoothed = clock.judgement_elapsed;
-    clock.predicted_visual = clock.judgement_elapsed;
+    clock.prev_visual_elapsed = clock.judgement_elapsed;
     clock.audio_step_ms = 0.0;
     clock.visual_drift_ms = 0.0;
     clock.visual_correction_ms = 0.0;
