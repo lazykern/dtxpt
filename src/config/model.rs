@@ -2,9 +2,12 @@ use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
 use bevy_framepace::Limiter;
-use dtxpt::input::bindings::{InputBindingConfig, PlayMode, default_input_bindings};
+use dtxpt::input::bindings::{DrumLane, InputBindingConfig, default_input_bindings};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::time::Duration;
+
+use crate::gameplay::mods::AutoMode;
 
 /// Frame rate cap. Replaces the old `vsync: bool` toggle.
 ///
@@ -152,7 +155,19 @@ pub struct GameConfig {
     pub lane_speed: f32,
     pub timing_offset: f32,
     pub song_playback_rate: f32,
-    pub play_mode: PlayMode,
+    /// User's saved per-lane auto config. Persistent. AutoMode decides
+    /// how this is used at run start.
+    #[serde(default)]
+    pub per_lane_auto: BTreeSet<DrumLane>,
+    /// Per-song auto picker. Persistent in config (so user's last pick
+    /// is remembered). Resolved with `per_lane_auto` at run start to
+    /// produce the run's effective `active_mods.auto_lanes`.
+    #[serde(default)]
+    pub auto_mode: AutoMode,
+    /// Top-level mode toggle. Picked in song-select (or settings).
+    /// Persistent in config. Applied to `RunState.practice` at run start.
+    #[serde(default)]
+    pub practice_song_select: bool,
     pub bindings: Vec<InputBindingConfig>,
     #[serde(default, alias = "lane_keys", skip_serializing)]
     pub legacy_lane_keys: Option<[String; 10]>,
@@ -170,7 +185,7 @@ pub struct GameConfig {
 impl Default for GameConfig {
     fn default() -> Self {
         Self {
-            version: 10,
+            version: 11,
             chart_root: "charts".into(),
             last_chart_path: String::new(),
             preferred_difficulty: String::new(),
@@ -180,7 +195,9 @@ impl Default for GameConfig {
             lane_speed: 1.0,
             timing_offset: 0.0,
             song_playback_rate: 1.0,
-            play_mode: PlayMode::Normal,
+            per_lane_auto: BTreeSet::new(),
+            auto_mode: AutoMode::PerLane,
+            practice_song_select: false,
             bindings: default_input_bindings(),
             legacy_lane_keys: None,
             metronome_sound: true,
@@ -261,5 +278,24 @@ mod tests {
                 other => panic!("expected Manual, got {:?}", other),
             }
         }
+    }
+
+    #[test]
+    fn v11_config_roundtrips_through_ron() {
+        let mut per_lane = BTreeSet::new();
+        per_lane.insert(dtxpt::input::bindings::DrumLane::Bd);
+        per_lane.insert(dtxpt::input::bindings::DrumLane::Hh);
+        let cfg = GameConfig {
+            per_lane_auto: per_lane,
+            auto_mode: crate::gameplay::mods::AutoMode::AllAuto,
+            practice_song_select: true,
+            ..GameConfig::default()
+        };
+        let text = ron::ser::to_string(&cfg).expect("serialize");
+        let restored: GameConfig = ron::de::from_str(&text).expect("parse");
+        assert_eq!(restored.per_lane_auto, cfg.per_lane_auto);
+        assert_eq!(restored.auto_mode, cfg.auto_mode);
+        assert_eq!(restored.practice_song_select, cfg.practice_song_select);
+        assert_eq!(restored.version, 11);
     }
 }

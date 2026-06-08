@@ -1,5 +1,6 @@
+use dtxpt::input::bindings::DrumLane;
 use dtxpt::input::lanes::LANES;
-use dtxpt::input::{PlayMode, SYSTEM_ACTION_SETTINGS_ORDER, SystemAction};
+use dtxpt::input::{SYSTEM_ACTION_SETTINGS_ORDER, SystemAction};
 
 use crate::audio::AudioMix;
 use crate::config::GameConfig;
@@ -29,7 +30,9 @@ pub(crate) enum SettingRow {
     BgmVolume,
     DrumVolume,
     TimingOffset,
-    PlayMode,
+    Practice,
+    AutoMode,
+    PerLaneAuto(DrumLane),
     LaneSpeed,
     SongRate,
     LaneKey(usize),
@@ -54,17 +57,22 @@ pub(crate) fn category_rows(category: SettingCategory) -> Vec<SettingRow> {
             SettingRow::DrumVolume,
             SettingRow::TimingOffset,
         ],
-        SettingCategory::Gameplay => vec![
-            SettingRow::PlayMode,
-            SettingRow::LaneSpeed,
-            SettingRow::SongRate,
-            SettingRow::LpMuting,
-            SettingRow::DrumHitSound,
-            SettingRow::HitSoundPriorityHh,
-            SettingRow::HitSoundPriorityTom,
-            SettingRow::HitSoundPriorityCymbal,
-            SettingRow::HitSoundPriorityBd,
-        ],
+        SettingCategory::Gameplay => {
+            let mut rows: Vec<SettingRow> = vec![
+                SettingRow::Practice,
+                SettingRow::AutoMode,
+            ];
+            rows.extend(DrumLane::ALL.iter().copied().map(SettingRow::PerLaneAuto));
+            rows.push(SettingRow::LaneSpeed);
+            rows.push(SettingRow::SongRate);
+            rows.push(SettingRow::LpMuting);
+            rows.push(SettingRow::DrumHitSound);
+            rows.push(SettingRow::HitSoundPriorityHh);
+            rows.push(SettingRow::HitSoundPriorityTom);
+            rows.push(SettingRow::HitSoundPriorityCymbal);
+            rows.push(SettingRow::HitSoundPriorityBd);
+            rows
+        },
         SettingCategory::Input => {
             let mut rows: Vec<SettingRow> = (0..LANES.len()).map(SettingRow::LaneKey).collect();
             rows.extend(
@@ -151,17 +159,20 @@ impl SettingRow {
             | SettingRow::BgmVolume
             | SettingRow::DrumVolume
             | SettingRow::TimingOffset => SettingCategory::Audio,
-            SettingRow::PlayMode | SettingRow::LaneSpeed | SettingRow::SongRate => {
-                SettingCategory::Gameplay
-            }
-            SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => SettingCategory::Input,
-            SettingRow::FpsCap => SettingCategory::Graphics,
-            SettingRow::MetronomeSound | SettingRow::DebugHud => SettingCategory::Debug,
-            SettingRow::LpMuting | SettingRow::DrumHitSound => SettingCategory::Gameplay,
-            SettingRow::HitSoundPriorityHh
+            SettingRow::Practice
+            | SettingRow::AutoMode
+            | SettingRow::PerLaneAuto(_)
+            | SettingRow::LaneSpeed
+            | SettingRow::SongRate
+            | SettingRow::LpMuting
+            | SettingRow::DrumHitSound
+            | SettingRow::HitSoundPriorityHh
             | SettingRow::HitSoundPriorityTom
             | SettingRow::HitSoundPriorityCymbal
             | SettingRow::HitSoundPriorityBd => SettingCategory::Gameplay,
+            SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => SettingCategory::Input,
+            SettingRow::FpsCap => SettingCategory::Graphics,
+            SettingRow::MetronomeSound | SettingRow::DebugHud => SettingCategory::Debug,
         }
     }
 
@@ -172,13 +183,15 @@ impl SettingRow {
         )
     }
 
-    pub(crate) fn live_adjustable(self, active_play_mode: Option<PlayMode>) -> bool {
+    pub(crate) fn live_adjustable(self, active_practice: Option<bool>) -> bool {
         if !self.is_adjustable() {
             return false;
         }
         match self {
-            SettingRow::PlayMode => play_mode_change_allowed_during_play(active_play_mode),
-            SettingRow::SongRate => song_rate_change_allowed_during_play(active_play_mode),
+            SettingRow::Practice
+            | SettingRow::AutoMode
+            | SettingRow::PerLaneAuto(_) => play_mode_change_allowed_during_play(active_practice),
+            SettingRow::SongRate => song_rate_change_allowed_during_play(active_practice),
             _ => true,
         }
     }
@@ -190,6 +203,8 @@ impl SettingRow {
                 | SettingRow::LpMuting
                 | SettingRow::DrumHitSound
                 | SettingRow::DebugHud
+                | SettingRow::Practice
+                | SettingRow::PerLaneAuto(_)
         )
     }
 
@@ -199,6 +214,8 @@ impl SettingRow {
             SettingRow::LpMuting => config.lp_muting,
             SettingRow::DrumHitSound => config.drum_hit_sound,
             SettingRow::DebugHud => config.show_debug_hud,
+            SettingRow::Practice => config.practice_song_select,
+            SettingRow::PerLaneAuto(lane) => config.per_lane_auto.contains(&lane),
             _ => false,
         }
     }
@@ -228,7 +245,20 @@ impl SettingRow {
             SettingRow::MasterVolume => "Master volume",
             SettingRow::BgmVolume => "BGM volume",
             SettingRow::DrumVolume => "Drum volume",
-            SettingRow::PlayMode => "Play mode",
+            SettingRow::Practice => "Practice",
+            SettingRow::AutoMode => "Auto mode",
+            SettingRow::PerLaneAuto(lane) => match lane {
+                DrumLane::Bd => "Auto: BD",
+                DrumLane::Sd => "Auto: SD",
+                DrumLane::Ft => "Auto: FT",
+                DrumLane::Hh => "Auto: HH",
+                DrumLane::Lp => "Auto: LP",
+                DrumLane::Lt => "Auto: LT",
+                DrumLane::Ht => "Auto: HT",
+                DrumLane::Cy => "Auto: CY",
+                DrumLane::Rd => "Auto: RD",
+                DrumLane::Lc => "Auto: LC",
+            },
             SettingRow::LaneSpeed => "Lane speed",
             SettingRow::LaneKey(lane) => LANES[lane].label,
             SettingRow::SystemAction(action) => action.label(),
@@ -252,8 +282,14 @@ impl SettingRow {
             SettingRow::MasterVolume => "Global output level.",
             SettingRow::BgmVolume => "Song backing track level.",
             SettingRow::DrumVolume => "Drum hit and auto-SE level.",
-            SettingRow::PlayMode => {
-                "Normal or Practice. Locked mid-chart — choose before starting."
+            SettingRow::Practice => {
+                "Top-level mode. Practice skips gauge fail and disables leaderboard submission. Locked at song start."
+            }
+            SettingRow::AutoMode => {
+                "Off = no auto. Per-lane = use the per-lane auto config below. All auto = all 10 lanes auto for this run, your per-lane config is preserved."
+            }
+            SettingRow::PerLaneAuto(_) => {
+                "Toggle this lane on to auto-play it (when Auto mode = Per-lane or All auto)."
             }
             SettingRow::LaneSpeed => "Note scroll speed. Applies immediately during play.",
             SettingRow::LaneKey(_) => {
@@ -302,7 +338,9 @@ impl SettingRow {
             SettingRow::MasterVolume => format!("{:.0}%", mix.master * 100.0),
             SettingRow::BgmVolume => format!("{:.0}%", mix.bgm * 100.0),
             SettingRow::DrumVolume => format!("{:.0}%", mix.drums * 100.0),
-            SettingRow::PlayMode => config.play_mode.label().to_string(),
+            SettingRow::Practice => on_off(config.practice_song_select),
+            SettingRow::AutoMode => config.auto_mode.label().to_string(),
+            SettingRow::PerLaneAuto(lane) => on_off(config.per_lane_auto.contains(&lane)),
             SettingRow::HitSoundPriorityHh => config.hit_sound_priority_hh.label().to_string(),
             SettingRow::HitSoundPriorityTom => config.hit_sound_priority_ft.label().to_string(),
             SettingRow::HitSoundPriorityCymbal => config.hit_sound_priority_cy.label().to_string(),

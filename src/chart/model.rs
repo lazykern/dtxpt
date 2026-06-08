@@ -35,6 +35,11 @@ pub struct ChartNote {
     pub channel: u32,
     pub wav_id: Option<u32>,
     pub state: NoteState,
+    /// True when this note was hit by autoplay (not by player input).
+    /// Used to display the "AUTO" judgement string and to filter hit counts
+    /// (e.g. "100% on manual" vs "100% with 3 autoplay lanes"). Mirrors
+    /// DTXMania's `CChip.bIsAutoPlayed` (CStagePerfCommonScreen.cs:1433).
+    pub autoplayed: bool,
 }
 
 #[derive(Clone)]
@@ -228,6 +233,7 @@ pub fn should_suppress_metronome_beat(
 pub fn reconcile_notes_for_restart(notes: &mut [ChartNote]) {
     for note in notes {
         note.state = NoteState::Pending;
+        note.autoplayed = false;
     }
 }
 
@@ -235,6 +241,7 @@ pub fn reconcile_notes_for_seek(notes: &mut [ChartNote], target: f32) {
     for note in notes {
         if note.time > target {
             note.state = NoteState::Pending;
+            note.autoplayed = false;
         } else if note.time <= target && matches!(note.state, NoteState::Pending) {
             note.state = NoteState::Skipped;
         }
@@ -282,6 +289,7 @@ mod tests {
                 channel: 0x13,
                 wav_id: None,
                 state: NoteState::Pending,
+                autoplayed: false,
             },
             ChartNote {
                 time: 10.0,
@@ -289,6 +297,7 @@ mod tests {
                 channel: 0x13,
                 wav_id: None,
                 state: NoteState::Pending,
+                autoplayed: false,
             },
         ];
         reconcile_notes_for_seek(&mut notes, 5.0);
@@ -304,6 +313,7 @@ mod tests {
             channel: 0x13,
             wav_id: None,
             state: NoteState::Missed,
+            autoplayed: false,
         }];
         reconcile_notes_for_seek(&mut notes, 5.0);
         assert!(matches!(notes[0].state, NoteState::Pending));
@@ -317,6 +327,7 @@ mod tests {
             channel: 0x13,
             wav_id: None,
             state: NoteState::Hit(Judgement::Perfect),
+            autoplayed: false,
         }];
         reconcile_notes_for_seek(&mut notes, 5.0);
         assert!(matches!(notes[0].state, NoteState::Pending));
@@ -331,6 +342,7 @@ mod tests {
                 channel: 0x13,
                 wav_id: None,
                 state: NoteState::Hit(Judgement::Perfect),
+                autoplayed: false,
             },
             ChartNote {
                 time: 2.0,
@@ -338,6 +350,7 @@ mod tests {
                 channel: 0x13,
                 wav_id: None,
                 state: NoteState::Missed,
+                autoplayed: false,
             },
         ];
         assert!(chart_notes_complete(&notes));
@@ -347,6 +360,7 @@ mod tests {
             channel: 0x13,
             wav_id: None,
             state: NoteState::Pending,
+            autoplayed: false,
         }];
         assert!(!chart_notes_complete(&pending));
     }

@@ -5,10 +5,10 @@ use crate::gameplay::constants::{
 };
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::run::RunState;
-use dtxpt::input::bindings::{PlayMode, SystemAction};
+use dtxpt::input::bindings::SystemAction;
 use dtxpt::input::{InputBindings, MidiInputState};
 
-pub fn action_allowed_during_play(action: SystemAction, play_mode: PlayMode) -> bool {
+pub fn action_allowed_during_play(action: SystemAction, practice: bool) -> bool {
     match action {
         SystemAction::IncreaseSongRate
         | SystemAction::DecreaseSongRate
@@ -16,20 +16,22 @@ pub fn action_allowed_during_play(action: SystemAction, play_mode: PlayMode) -> 
         | SystemAction::SeekForward
         | SystemAction::SeekBackward
         | SystemAction::SeekToPreviousMeasure
-        | SystemAction::SeekToNextMeasure => play_mode == PlayMode::Practice,
+        | SystemAction::SeekToNextMeasure => practice,
         _ => true,
     }
 }
 
-pub fn play_mode_change_allowed_during_play(active_play_mode: Option<PlayMode>) -> bool {
-    active_play_mode.is_none()
+pub fn play_mode_change_allowed_during_play(_active_practice: Option<bool>) -> bool {
+    // Allowed any time. Changing practice / per-lane / auto_mode mid-run
+    // resets the run state (counters, gauge) so the new mode takes effect
+    // cleanly from the current chart position.
+    true
 }
 
-pub fn song_rate_change_allowed_during_play(active_play_mode: Option<PlayMode>) -> bool {
-    match active_play_mode {
+pub fn song_rate_change_allowed_during_play(active_practice: Option<bool>) -> bool {
+    match active_practice {
         None => true,
-        Some(PlayMode::Practice) => true,
-        Some(PlayMode::Normal | PlayMode::Auto) => false,
+        Some(practice) => practice,
     }
 }
 
@@ -116,23 +118,23 @@ mod tests {
 
     #[test]
     fn normal_mode_blocks_practice_tools() {
-        assert!(!action_allowed_during_play(
-            SystemAction::SeekForward,
-            PlayMode::Normal
-        ));
-        assert!(!song_rate_change_allowed_during_play(Some(
-            PlayMode::Normal
-        )));
+        assert!(!action_allowed_during_play(SystemAction::SeekForward, false));
+        assert!(!song_rate_change_allowed_during_play(Some(false)));
+    }
+
+    #[test]
+    fn play_mode_change_allowed_in_any_state() {
+        assert!(play_mode_change_allowed_during_play(None));
+        assert!(play_mode_change_allowed_during_play(Some(false)));
+        assert!(play_mode_change_allowed_during_play(Some(true)));
     }
 
     #[test]
     fn practice_mode_allows_practice_tools() {
         assert!(action_allowed_during_play(
             SystemAction::IncreaseSongRate,
-            PlayMode::Practice
+            true
         ));
-        assert!(song_rate_change_allowed_during_play(Some(
-            PlayMode::Practice
-        )));
+        assert!(song_rate_change_allowed_during_play(Some(true)));
     }
 }

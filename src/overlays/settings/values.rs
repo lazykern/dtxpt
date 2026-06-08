@@ -3,12 +3,15 @@ use bevy::window::Window;
 use bevy::winit::WinitSettings;
 use bevy_framepace::FramepaceSettings;
 
-use dtxpt::input::{InputBindings, MidiInputState, PlayMode, SystemAction};
+use dtxpt::chart::Judgement;
+use dtxpt::input::{InputBindings, MidiInputState, SystemAction};
 
 use crate::app::state::{AppState, OverlayState, PauseState, is_paused};
 use crate::audio::AudioMix;
 use crate::config::{FpsCap, GameConfig, HitSoundPriority};
 use crate::gameplay::constants::*;
+use crate::gameplay::gauge::GAUGE_START;
+use crate::gameplay::mods::resolve_auto_lanes;
 use crate::gameplay::run::RunState;
 
 use super::rows::SettingRow;
@@ -39,7 +42,7 @@ pub(crate) fn apply_setting_delta(
     window: Option<&mut Window>,
     winit: Option<&mut WinitSettings>,
 ) -> bool {
-    if delta == 0.0 || !row.live_adjustable(run.as_deref().map(|run| run.play_mode)) {
+    if delta == 0.0 || !row.live_adjustable(run.as_deref().map(|run| run.practice)) {
         return false;
     }
 
@@ -61,18 +64,38 @@ pub(crate) fn apply_setting_delta(
                 (config.drum_volume + f64::from(delta * VOLUME_STEP)).clamp(0.0, 1.0);
             mix.drums = config.drum_volume as f32;
         }
-        SettingRow::PlayMode => {
-            config.play_mode = if delta > 0.0 {
-                config.play_mode.next()
-            } else {
-                match config.play_mode {
-                    PlayMode::Normal => PlayMode::Auto,
-                    PlayMode::Auto => PlayMode::Practice,
-                    PlayMode::Practice => PlayMode::Normal,
-                }
-            };
+        SettingRow::Practice => {
+            let prev = config.practice_song_select;
+            config.practice_song_select = !prev;
             if let Some(run) = run {
-                run.play_mode = config.play_mode;
+                if run.practice != config.practice_song_select {
+                    run.practice = config.practice_song_select;
+                    reset_run_for_mode_change(run);
+                }
+            }
+        }
+        SettingRow::AutoMode => {
+            let prev = config.auto_mode;
+            config.auto_mode = prev.next();
+            if let Some(run) = run {
+                // Re-resolve effective auto set with the new mode.
+                run.active_mods.auto_lanes =
+                    resolve_auto_lanes(&config.per_lane_auto, config.auto_mode);
+            }
+        }
+        SettingRow::PerLaneAuto(lane) => {
+            if config.per_lane_auto.contains(&lane) {
+                config.per_lane_auto.remove(&lane);
+            } else {
+                config.per_lane_auto.insert(lane);
+            }
+            // In Normal mode the run is locked; per_lane changes only take
+            // effect at next run start. In Practice we propagate live.
+            if let Some(run) = run {
+                if run.practice {
+                    run.active_mods.auto_lanes =
+                        resolve_auto_lanes(&config.per_lane_auto, config.auto_mode);
+                }
             }
         }
         SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => {}
@@ -155,6 +178,29 @@ pub(crate) fn apply_setting_delta(
         }
     }
     before != *config
+}
+
+/// Reset run counters/gauge so a freshly-chosen mode takes effect from
+/// the current chart position. Keeps timing/position state (elapsed,
+/// started, raw_elapsed) so the player can keep playing without seeking.
+fn reset_run_for_mode_change(run: &mut RunState) {
+    run.score = 0.0;
+    run.judge_units = 0.0;
+    run.combo = 0;
+    run.max_combo = 0;
+    run.perfect = 0;
+    run.great = 0;
+    run.good = 0;
+    run.poor = 0;
+    run.miss = 0;
+    run.last_judgement = Judgement::Miss;
+    run.last_message = "READY".into();
+    run.last_delta_ms = 0.0;
+    run.last_was_auto = false;
+    run.judgement_timer = Timer::from_seconds(0.0, TimerMode::Once);
+    run.finished = false;
+    run.failed = false;
+    run.gauge = GAUGE_START;
 }
 
 fn cycle_hit_sound_priority(current: HitSoundPriority, delta: f32) -> HitSoundPriority {

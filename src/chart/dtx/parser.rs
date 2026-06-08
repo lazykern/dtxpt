@@ -259,6 +259,7 @@ pub fn parse_dtx_chart(text: &str, source: &str, chart_dir: &str) -> Result<(Cha
                 channel,
                 wav_id: wav,
                 state: NoteState::Pending,
+                autoplayed: false,
             }),
             _ => None,
         })

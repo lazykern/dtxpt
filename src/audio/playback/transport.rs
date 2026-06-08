@@ -331,7 +331,8 @@ pub(crate) fn restart_playback(
     let song_playback_rate = run.song_playback_rate;
     let metronome_sound = run.metronome_sound;
     let show_debug_hud = run.show_debug_hud;
-    let play_mode = run.play_mode;
+    let practice = run.practice;
+    let active_mods = run.active_mods.clone();
 
     reconcile_notes_for_restart(&mut chart.notes);
     for event in chart.scheduled_audio.iter_mut() {
@@ -347,7 +348,8 @@ pub(crate) fn restart_playback(
     run.song_playback_rate = song_playback_rate;
     run.metronome_sound = metronome_sound;
     run.show_debug_hud = show_debug_hud;
-    run.play_mode = play_mode;
+    run.practice = practice;
+    run.active_mods = active_mods;
     clock.reset(run.timing_offset);
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
@@ -502,23 +504,23 @@ pub(crate) fn adjust_song_playback_rate(
     bgm_instance: Option<Res<BgmInstance>>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
 ) {
-    let play_mode = run.play_mode;
+    let practice = run.practice;
     let mut changed = false;
     if input.action_just_pressed(SystemAction::DecreaseSongRate)
-        && action_allowed_during_play(SystemAction::DecreaseSongRate, play_mode)
+        && action_allowed_during_play(SystemAction::DecreaseSongRate, practice)
     {
         run.song_playback_rate = (run.song_playback_rate - SONG_RATE_STEP)
             .clamp(MIN_SONG_PLAYBACK_RATE, MAX_SONG_PLAYBACK_RATE);
         changed = true;
     }
     if input.action_just_pressed(SystemAction::ResetSongRate)
-        && action_allowed_during_play(SystemAction::ResetSongRate, play_mode)
+        && action_allowed_during_play(SystemAction::ResetSongRate, practice)
     {
         run.song_playback_rate = 1.0;
         changed = true;
     }
     if input.action_just_pressed(SystemAction::IncreaseSongRate)
-        && action_allowed_during_play(SystemAction::IncreaseSongRate, play_mode)
+        && action_allowed_during_play(SystemAction::IncreaseSongRate, practice)
     {
         run.song_playback_rate = (run.song_playback_rate + SONG_RATE_STEP)
             .clamp(MIN_SONG_PLAYBACK_RATE, MAX_SONG_PLAYBACK_RATE);
@@ -563,10 +565,10 @@ pub(crate) fn playback_transport(
         Query<Entity, With<MetronomeLineVisual>>,
     )>,
 ) {
-    let play_mode = run.play_mode;
+    let practice = run.practice;
     let mut seek_target = None;
     if input.action_just_pressed(SystemAction::SeekForward)
-        && action_allowed_during_play(SystemAction::SeekForward, play_mode)
+        && action_allowed_during_play(SystemAction::SeekForward, practice)
     {
         seek_target = Some(clamp_chart_time(
             &timing,
@@ -574,7 +576,7 @@ pub(crate) fn playback_transport(
             WARMUP_SECS,
         ));
     } else if input.action_just_pressed(SystemAction::SeekBackward)
-        && action_allowed_during_play(SystemAction::SeekBackward, play_mode)
+        && action_allowed_during_play(SystemAction::SeekBackward, practice)
     {
         seek_target = Some(clamp_chart_time(
             &timing,
@@ -582,7 +584,7 @@ pub(crate) fn playback_transport(
             WARMUP_SECS,
         ));
     } else if input.action_just_pressed(SystemAction::SeekToPreviousMeasure)
-        && action_allowed_during_play(SystemAction::SeekToPreviousMeasure, play_mode)
+        && action_allowed_during_play(SystemAction::SeekToPreviousMeasure, practice)
     {
         let measure = timing
             .measure_at_time(clock.audio_elapsed)
@@ -593,7 +595,7 @@ pub(crate) fn playback_transport(
             WARMUP_SECS,
         ));
     } else if input.action_just_pressed(SystemAction::SeekToNextMeasure)
-        && action_allowed_during_play(SystemAction::SeekToNextMeasure, play_mode)
+        && action_allowed_during_play(SystemAction::SeekToNextMeasure, practice)
     {
         let measure = timing.measure_at_time(clock.audio_elapsed) + 1;
         seek_target = Some(clamp_chart_time(

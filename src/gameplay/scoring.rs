@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use dtxpt::chart::Chart;
-use dtxpt::input::bindings::PlayMode;
 
 use crate::app::state::AppState;
 use crate::gameplay::constants::TARGET_SCORE;
@@ -85,10 +84,15 @@ pub(crate) fn finish_to_result(
         gauge: run.gauge,
         cleared,
         failed: run.failed,
-        play_mode: run.play_mode,
+        practice: run.practice,
+        auto_lanes: run.active_mods.auto_lanes.clone(),
         rank,
     };
-    let is_new_best = run.play_mode == PlayMode::Normal
+    // Practice runs and any run with auto lanes do not compete on the
+    // "no mods" best board. The user explicitly opted into assistance
+    // for this run, so the score is recorded but not compared.
+    let is_new_best = !run.practice
+        && run.active_mods.auto_lanes.is_empty()
         && scores
             .scores
             .get(&result.chart_path)
@@ -109,7 +113,6 @@ pub(crate) fn finish_to_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dtxpt::input::bindings::PlayMode;
 
     fn sample_run() -> RunState {
         RunState {
@@ -123,7 +126,8 @@ mod tests {
             combo: 3,
             max_combo: 5,
             gauge: 0.9,
-            play_mode: PlayMode::Normal,
+            practice: false,
+            active_mods: Default::default(),
             ..Default::default()
         }
     }

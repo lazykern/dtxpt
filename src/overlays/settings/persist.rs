@@ -19,7 +19,7 @@ pub fn persist_runtime_config(
         && config.lane_speed == run.lane_speed
         && config.timing_offset == run.timing_offset
         && config.song_playback_rate == run.song_playback_rate
-        && config.play_mode == run.play_mode
+        && config.practice_song_select == run.practice
         && config.metronome_sound == run.metronome_sound
         && config.lp_muting == run.lp_muting
         && config.drum_hit_sound == run.drum_hit_sound
@@ -38,7 +38,7 @@ pub fn persist_runtime_config(
     config.lane_speed = run.lane_speed;
     config.timing_offset = run.timing_offset;
     config.song_playback_rate = run.song_playback_rate;
-    config.play_mode = run.play_mode;
+    config.practice_song_select = run.practice;
     config.metronome_sound = run.metronome_sound;
     config.lp_muting = run.lp_muting;
     config.drum_hit_sound = run.drum_hit_sound;

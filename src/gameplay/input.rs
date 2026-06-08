@@ -15,8 +15,8 @@ use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::{keyboard_viz, playfield_viz::lane_receptor_color};
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, chart_notes_complete};
+use dtxpt::input::bindings::DrumLane;
 use dtxpt::input::lanes::LANES;
-use dtxpt::input::bindings::PlayMode;
 use dtxpt::input::{InputBindings, LaneTriggerSource, MidiInputState};
 
 #[derive(SystemParam)]
@@ -56,6 +56,7 @@ pub(crate) fn capture_lane_inputs(
     keyboard: Res<ButtonInput<KeyCode>>,
     midi: Res<MidiInputState>,
     bindings: Res<InputBindings>,
+    run: Res<RunState>,
     mut pending: ResMut<PendingLaneInputs>,
 ) {
     if is_paused(pause_state.get()) {
@@ -63,6 +64,15 @@ pub(crate) fn capture_lane_inputs(
     }
     for lane in 0..LANES.len() {
         if let Some(source) = bindings.lane_triggered_with_source(lane, &keyboard, &midi.note_on_events) {
+            // Per-lane auto: skip input capture for lanes the autoplay drives.
+            // Auto lane hits are simulated at note time by `autoplay_hit_notes`.
+            // Skipping at capture time keeps the per-frame poll path clean and
+            // avoids stamping `Instant::now()` for events we'd discard later.
+            if let Some(lane_enum) = DrumLane::from_index(lane) {
+                if run.active_mods.auto_lanes.contains(&lane_enum) {
+                    continue;
+                }
+            }
             let wall_time = match source {
                 LaneTriggerSource::Keyboard => Instant::now(),
                 LaneTriggerSource::Midi { event } => event.received_at,
@@ -107,7 +117,6 @@ pub(crate) fn process_pending_lane_hits(
         || run.failed
         || is_paused(pause_state.get())
         || chart_notes_complete(&chart.notes)
-        || run.play_mode == PlayMode::Auto
     {
         // discard any stale captures that snuck in across a state change
         pending.events.clear();
@@ -125,6 +134,9 @@ pub(crate) fn process_pending_lane_hits(
 
     let events = std::mem::take(&mut pending.events);
     for event in events {
+        // Per-lane auto filtering happens at capture time so the
+        // wall_time stamp on the event is meaningful; the events
+        // we receive here are all for non-auto lanes.
         let wall_delta = now_wall.saturating_duration_since(event.wall_time).as_secs_f32();
         let audio_at_event = audio_now - wall_delta * song_rate;
         let elapsed = audio_at_event + timing_offset;

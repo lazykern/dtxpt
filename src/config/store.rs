@@ -3,6 +3,9 @@ use std::path::Path;
 use anyhow::Result;
 use directories::ProjectDirs;
 
+use crate::gameplay::mods::AutoMode;
+use dtxpt::input::bindings::DrumLane;
+
 use super::model::{FpsCap, GameConfig};
 
 pub fn project_dirs() -> Option<ProjectDirs> {
@@ -62,12 +65,69 @@ fn migrate_v9_to_v10(text: &str) -> Option<GameConfig> {
     Some(cfg)
 }
 
+/// Migrate a v10 config (had `play_mode: PlayMode`) to v11
+/// (`per_lane_auto: BTreeSet<DrumLane>` + `auto_mode: AutoMode`).
+/// Legacy `play_mode = Auto` becomes `per_lane_auto = ALL_LANES` so the
+/// user's effective "all auto" intent is preserved as their saved
+/// per-lane config. Legacy `play_mode = Practice` is dropped (Practice
+/// becomes a top-level mode, picked at song start).
+fn migrate_v10_to_v11(text: &str) -> Option<GameConfig> {
+    // v10 has a `play_mode: PlayMode` field that v11 removed. RON fails
+    // to parse the v10 text into a v11 `GameConfig` because `play_mode`
+    // is an unknown field. Probe the text with a v10-specific struct
+    // that only knows the fields we care about for migration, then
+    // construct a fresh v11 config from the probe data + v11 defaults.
+    //
+    // `play_mode` is deserialized as a local enum with the same variant
+    // names as the v10 `PlayMode`. This is needed because RON serializes
+    // enum variants as bare identifiers (e.g. `Auto`), not as strings.
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct V10Probe {
+        version: u32,
+        play_mode: V10PlayMode,
+    }
+
+    #[derive(serde::Deserialize, Default)]
+    enum V10PlayMode {
+        #[default]
+        Normal,
+        Practice,
+        Auto,
+    }
+
+    let probe: V10Probe = match ron::de::from_str(text) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+    if probe.version >= 11 {
+        return None;
+    }
+    if !text.contains("play_mode") {
+        return None;
+    }
+    let was_auto = matches!(probe.play_mode, V10PlayMode::Auto);
+    let mut cfg = GameConfig::default();
+    if was_auto {
+        cfg.per_lane_auto = DrumLane::ALL.iter().copied().collect();
+        cfg.auto_mode = AutoMode::PerLane;
+    }
+    cfg.version = 11;
+    Some(cfg)
+}
+
 pub fn load_game_config() -> GameConfig {
     let path = game_config_path();
     if let Ok(text) = std::fs::read_to_string(&path) {
+        if let Some(migrated) = migrate_v10_to_v11(&text) {
+            if let Err(err) = save_game_config(&migrated) {
+                eprintln!("failed to save migrated v10->v11 config: {err}");
+            }
+            return migrated;
+        }
         if let Some(migrated) = migrate_v9_to_v10(&text) {
             if let Err(err) = save_game_config(&migrated) {
-                eprintln!("failed to save migrated config: {err}");
+                eprintln!("failed to save migrated v9->v10 config: {err}");
             }
             return migrated;
         }
@@ -140,5 +200,39 @@ mod tests {
         // user's own fps_cap takes precedence.
         let text = "(version: 9, vsync: false, fps_cap: Cap60)\n";
         assert!(migrate_v9_to_v10(text).is_none());
+    }
+
+    #[test]
+    fn migrate_v10_auto_becomes_per_lane_all_ten() {
+        let text = "(version: 10, play_mode: Auto, fps_cap: Vsync)\n";
+        let cfg = migrate_v10_to_v11(text).expect("should migrate");
+        assert_eq!(cfg.version, 11);
+        // Legacy Auto is preserved as the user's per-lane config so their
+        // effective "all 10 auto" intent is kept.
+        assert_eq!(cfg.per_lane_auto.len(), DrumLane::ALL.len());
+        assert_eq!(cfg.auto_mode, AutoMode::PerLane);
+    }
+
+    #[test]
+    fn migrate_v10_normal_keeps_empty_per_lane() {
+        let text = "(version: 10, play_mode: Normal, fps_cap: Vsync)\n";
+        let cfg = migrate_v10_to_v11(text).expect("should migrate");
+        assert_eq!(cfg.version, 11);
+        assert!(cfg.per_lane_auto.is_empty());
+        assert_eq!(cfg.auto_mode, AutoMode::PerLane);
+    }
+
+    #[test]
+    fn migrate_v10_practice_does_not_touch_per_lane() {
+        let text = "(version: 10, play_mode: Practice, fps_cap: Vsync)\n";
+        let cfg = migrate_v10_to_v11(text).expect("should migrate");
+        assert_eq!(cfg.version, 11);
+        assert!(cfg.per_lane_auto.is_empty());
+    }
+
+    #[test]
+    fn migrate_skips_v11_configs() {
+        let text = "(version: 11, per_lane_auto: [], auto_mode: PerLane)\n";
+        assert!(migrate_v10_to_v11(text).is_none());
     }
 }

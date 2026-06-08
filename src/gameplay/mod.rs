@@ -9,6 +9,7 @@ pub mod interp;
 pub mod judgement;
 pub mod layout;
 pub mod live_tuning;
+pub mod mods;
 pub mod metronome;
 pub mod plugin;
 pub mod rendering;

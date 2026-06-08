@@ -25,5 +25,5 @@ pub use mutate::{
 pub use runtime::{InputBindings, LaneTriggerSource};
 pub use types::{
     BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig, InputSourceConfig,
-    LANE_COUNT, MidiDeviceFilter, PlayMode, SYSTEM_ACTION_SETTINGS_ORDER, SystemAction,
+    LANE_COUNT, MidiDeviceFilter, SYSTEM_ACTION_SETTINGS_ORDER, SystemAction,
 };

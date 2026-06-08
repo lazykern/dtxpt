@@ -14,7 +14,7 @@ use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::playfield_viz::spawn_hit_burst;
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete, resolve_empty_hit_sound};
-use dtxpt::input::bindings::PlayMode;
+use dtxpt::input::bindings::DrumLane;
 use dtxpt::input::lanes::{
     PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
 };
@@ -66,7 +66,7 @@ pub(crate) fn process_lane_hit(
     if let Some((index, delta)) = best {
         if let Some(judgement) = Judgement::from_delta(delta) {
             chart.notes[index].state = NoteState::Hit(judgement);
-            apply_judgement(run, judgement, delta, chart.notes.len());
+            apply_judgement(run, judgement, delta, chart.notes.len(), false);
             let hit_y = layout.note_y(
                 chart.notes[index].time,
                 render_clock.current,
@@ -237,12 +237,15 @@ pub fn miss_late_notes(
             Judgement::Miss,
             Judgement::POOR_WINDOW,
             chart.notes.len(),
+            false,
         );
     }
 }
 
-/// Autoplay: when run.play_mode == Auto, simulate a perfect hit on every pending
-/// note whose audio-clock time has passed. Bypasses the input layer entirely.
+/// Autoplay: simulate a perfect hit on every pending note whose lane is in
+/// `active_mods.auto_lanes` and whose audio-clock time has passed. Lanes
+/// not in the auto set are left for the player's input to hit (or to miss
+/// via `miss_late_notes`).
 ///
 /// Directly applies the Perfect judgement + visual burst + drum sound for each
 /// due note, mirroring the success branch of process_lane_hit but without the
@@ -261,10 +264,10 @@ pub(crate) fn autoplay_hit_notes(
         Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
     )>,
 ) {
-    if run.play_mode != PlayMode::Auto
-        || run.finished
+    if run.finished
         || run.failed
         || is_paused(pause_state.get())
+        || run.active_mods.auto_lanes.is_empty()
         || chart_notes_complete(&chart.notes)
     {
         return;
@@ -276,7 +279,14 @@ pub(crate) fn autoplay_hit_notes(
     // Collect due notes first to avoid borrow conflicts (we mutate chart below).
     let mut due: Vec<usize> = Vec::new();
     for (i, note) in chart.notes.iter().enumerate() {
-        if note.state == NoteState::Pending && now_audio >= note.time {
+        if note.state != NoteState::Pending || now_audio < note.time {
+            continue;
+        }
+        let lane = match DrumLane::from_index(note.lane) {
+            Some(l) => l,
+            None => continue,
+        };
+        if run.active_mods.auto_lanes.contains(&lane) {
             due.push(i);
         }
     }
@@ -291,7 +301,8 @@ pub(crate) fn autoplay_hit_notes(
         let delta = 0.0_f32; // exact hit -> Perfect
         let judgement = Judgement::Perfect;
         chart.notes[index].state = NoteState::Hit(judgement);
-        apply_judgement(&mut run, judgement, delta, total_notes);
+        chart.notes[index].autoplayed = true;
+        apply_judgement(&mut run, judgement, delta, total_notes, true);
         let hit_y = layout.note_y(
             chart.notes[index].time,
             render_clock.current,
@@ -320,9 +331,16 @@ pub(crate) fn autoplay_hit_notes(
     }
 }
 
-pub fn apply_judgement(run: &mut RunState, judgement: Judgement, delta: f32, total_notes: usize) {
+pub fn apply_judgement(
+    run: &mut RunState,
+    judgement: Judgement,
+    delta: f32,
+    total_notes: usize,
+    autoplayed: bool,
+) {
     run.last_judgement = judgement;
     run.last_message = judgement.label().into();
+    run.last_was_auto = autoplayed;
     run.last_delta_ms = delta * 1000.0;
     run.judgement_timer = Timer::from_seconds(JUDGEMENT_SECS, TimerMode::Once);
     run.judge_units += judgement.weight();
@@ -376,6 +394,7 @@ mod tests {
             channel: 0x11 + lane as u32,
             wav_id: Some(wav),
             state,
+            autoplayed: false,
         }
     }
 
@@ -414,5 +433,30 @@ mod tests {
         }];
         let sound = resolve_empty_hit_sound(&events, 0, &[0], 5.0).unwrap();
         assert_eq!(sound, (Some(99), 0xB3));
+    }
+
+    #[test]
+    fn apply_judgement_autoplayed_sets_last_was_auto() {
+        use crate::config::GameConfig;
+        use crate::gameplay::run::RunState;
+
+        let mut run = RunState::from_config(&GameConfig::default());
+        assert!(!run.last_was_auto);
+        apply_judgement(&mut run, Judgement::Perfect, 0.0, 1, true);
+        assert!(run.last_was_auto);
+        assert_eq!(run.last_judgement, Judgement::Perfect);
+        apply_judgement(&mut run, Judgement::Great, 0.04, 1, false);
+        assert!(!run.last_was_auto);
+        assert_eq!(run.last_judgement, Judgement::Great);
+    }
+
+    #[test]
+    fn reconcile_restart_clears_autoplayed_flag() {
+        use dtxpt::chart::{reconcile_notes_for_restart, NoteState};
+        let mut notes = vec![note(1.0, 0, 1, NoteState::Hit(Judgement::Perfect))];
+        notes[0].autoplayed = true;
+        reconcile_notes_for_restart(&mut notes);
+        assert!(matches!(notes[0].state, NoteState::Pending));
+        assert!(!notes[0].autoplayed);
     }
 }

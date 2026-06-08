@@ -4,7 +4,7 @@ pub mod midi;
 
 pub use bindings::{
     BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig, InputBindings,
-    InputSourceConfig, LANE_COUNT, LaneTriggerSource, MidiDeviceFilter, PlayMode,
+    InputSourceConfig, LANE_COUNT, LaneTriggerSource, MidiDeviceFilter,
     SYSTEM_ACTION_SETTINGS_ORDER, SystemAction, add_keyboard_lane_binding,
     add_midi_lane_binding, default_input_bindings, default_input_bindings_with_lane_keys,
     default_keycode, default_lane_key_names, keyboard_key_for_action,

@@ -34,8 +34,10 @@ pub fn setup_result(
             .unwrap_or_else(|| "none".to_string());
         let clear_line = if result.failed {
             "FAILED".to_string()
-        } else if result.play_mode.label() == "Practice" {
+        } else if result.practice {
             "Practice".to_string()
+        } else if !result.auto_lanes.is_empty() {
+            "Auto Assist".to_string()
         } else if result.cleared {
             "CLEAR".to_string()
         } else {

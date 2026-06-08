@@ -3,7 +3,6 @@
 use bevy::prelude::*;
 
 use dtxpt::chart::Judgement;
-use dtxpt::input::bindings::PlayMode;
 
 use crate::app::markers::{GaugeBarFill, GaugeBarTrack};
 use crate::gameplay::layout::PlayfieldLayout;
@@ -24,7 +23,7 @@ pub fn gauge_delta(judgement: Judgement) -> f32 {
 
 pub fn apply_gauge(run: &mut RunState, judgement: Judgement) {
     run.gauge = (run.gauge + gauge_delta(judgement)).clamp(0.0, 1.0);
-    if run.play_mode == PlayMode::Practice {
+    if run.practice {
         return;
     }
     if run.gauge <= 0.0 {
@@ -111,10 +110,8 @@ mod tests {
 
     #[test]
     fn practice_mode_tracks_gauge_without_failing() {
-        let mut run = RunState::from_config(&GameConfig {
-            play_mode: PlayMode::Practice,
-            ..GameConfig::default()
-        });
+        let mut run = RunState::from_config(&GameConfig::default());
+        run.practice = true;
         for _ in 0..20 {
             apply_gauge(&mut run, Judgement::Miss);
         }

@@ -166,7 +166,7 @@ pub(crate) fn update_hud(
         "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Cap {} ({})  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms\nDiag spikes={} peak={:.1}ms metro={} preempt={} despawn={} decode={} midi={} voices={live_voices} decode_pending={pending_decode}",
         chart.title,
         chart.source,
-        run.play_mode.label(),
+        run.active_mods.display_label(run.practice),
         "BD SD FT HH LT HT CY RD LP LC",
         time_text,
         clock.audio_elapsed,
@@ -236,6 +236,11 @@ pub(crate) fn update_judgement_text(
             } else {
                 ("READY".to_string(), color.0)
             }
+        } else if run.last_was_auto {
+            (
+                format!("AUTO\n{:+.0} ms", run.last_delta_ms),
+                run.last_judgement.color(),
+            )
         } else {
             (
                 format!("{}\n{:+.0} ms", run.last_message, run.last_delta_ms),
