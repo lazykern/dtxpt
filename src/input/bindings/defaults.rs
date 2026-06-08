@@ -96,7 +96,7 @@ pub(crate) fn default_system_bindings() -> Vec<InputBindingConfig> {
         ("Digit7", IncreaseSongRate),
         ("KeyM", ToggleMetronomeSound),
         ("KeyV", ToggleDebugHud),
-        ("F6", ToggleVsync),
+        ("F6", CycleFpsCap),
         ("F3", DecreaseLaneSpeed),
         ("F4", IncreaseLaneSpeed),
     ]

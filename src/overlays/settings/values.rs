@@ -1,30 +1,27 @@
 use bevy::prelude::*;
-use bevy::window::{PresentMode, Window};
+use bevy::window::Window;
 use bevy::winit::WinitSettings;
 
 use dtxpt::input::{InputBindings, MidiInputState, PlayMode, SystemAction};
 
 use crate::app::state::{AppState, OverlayState, PauseState, is_paused};
 use crate::audio::AudioMix;
-use crate::config::{GameConfig, HitSoundPriority};
+use crate::config::{FpsCap, GameConfig, HitSoundPriority};
 use crate::gameplay::constants::*;
-use crate::gameplay::hotkeys::winit_settings_for_vsync;
 use crate::gameplay::run::RunState;
 
 use super::rows::SettingRow;
 
-pub(crate) fn apply_vsync_setting(
-    window: &mut Window,
+pub(crate) fn apply_fps_cap(
+    window: Option<&mut Window>,
     winit: Option<&mut WinitSettings>,
-    enabled: bool,
+    cap: FpsCap,
 ) {
-    window.present_mode = if enabled {
-        PresentMode::AutoVsync
-    } else {
-        PresentMode::AutoNoVsync
-    };
+    if let Some(window) = window {
+        window.present_mode = cap.present_mode();
+    }
     if let Some(winit) = winit {
-        *winit = winit_settings_for_vsync(enabled);
+        *winit = cap.winit_settings();
     }
 }
 
@@ -95,13 +92,9 @@ pub(crate) fn apply_setting_delta(
                 run.song_playback_rate = config.song_playback_rate;
             }
         }
-        SettingRow::Vsync => {
-            config.vsync = !config.vsync;
-            if let Some(window) = window {
-                apply_vsync_setting(window, winit, config.vsync);
-            } else if let Some(winit) = winit {
-                *winit = winit_settings_for_vsync(config.vsync);
-            }
+        SettingRow::FpsCap => {
+            config.fps_cap = config.fps_cap.next();
+            apply_fps_cap(window, winit, config.fps_cap);
         }
         SettingRow::MetronomeSound => {
             config.metronome_sound = !config.metronome_sound;

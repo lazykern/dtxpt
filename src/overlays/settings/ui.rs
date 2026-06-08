@@ -16,7 +16,7 @@ use crate::ui::theme::SPACING_XS;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
 
-use super::values::{apply_setting_delta, apply_vsync_setting};
+use super::values::{apply_fps_cap, apply_setting_delta};
 use super::{
     RebindingTarget, SettingRow, SettingsList, SettingsOverlay, SettingsScrollSync,
     SettingsUiCache, filtered_settings,
@@ -31,7 +31,7 @@ pub fn setup_global(
 ) {
     if let Ok(mut window) = windows.single_mut() {
         *layout = PlayfieldLayout::from_window(&window);
-        apply_vsync_setting(&mut window, Some(&mut winit), config.vsync);
+        apply_fps_cap(Some(&mut window), Some(&mut winit), config.fps_cap);
     }
     commands.spawn((Camera2d, IsDefaultUiCamera));
 

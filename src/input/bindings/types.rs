@@ -106,7 +106,7 @@ pub enum SystemAction {
     ResetSongRate,
     ToggleMetronomeSound,
     ToggleDebugHud,
-    ToggleVsync,
+    CycleFpsCap,
 }
 
 pub const SYSTEM_ACTION_SETTINGS_ORDER: [SystemAction; 25] = [
@@ -134,7 +134,7 @@ pub const SYSTEM_ACTION_SETTINGS_ORDER: [SystemAction; 25] = [
     SystemAction::IncreaseSongRate,
     SystemAction::ToggleMetronomeSound,
     SystemAction::ToggleDebugHud,
-    SystemAction::ToggleVsync,
+    SystemAction::CycleFpsCap,
 ];
 
 impl SystemAction {
@@ -164,7 +164,7 @@ impl SystemAction {
             Self::ResetSongRate => "Reset song rate",
             Self::ToggleMetronomeSound => "Toggle metronome",
             Self::ToggleDebugHud => "Toggle debug HUD",
-            Self::ToggleVsync => "Toggle VSync",
+            Self::CycleFpsCap => "Cycle FPS cap",
         }
     }
 
@@ -205,7 +205,7 @@ impl SystemAction {
             }
             Self::ToggleMetronomeSound => "Toggle metronome clicks during play.",
             Self::ToggleDebugHud => "Toggle the gameplay debug HUD.",
-            Self::ToggleVsync => "Toggle vertical sync for the game window.",
+            Self::CycleFpsCap => "Cycle frame rate cap (VSync / 60 / 120 / 144 / 240 / Unlimited).",
         }
     }
 }

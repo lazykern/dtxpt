@@ -34,7 +34,7 @@ pub(crate) enum SettingRow {
     SongRate,
     LaneKey(usize),
     SystemAction(SystemAction),
-    Vsync,
+    FpsCap,
     MetronomeSound,
     LpMuting,
     DrumHitSound,
@@ -75,7 +75,7 @@ pub(crate) fn category_rows(category: SettingCategory) -> Vec<SettingRow> {
             );
             rows
         }
-        SettingCategory::Graphics => vec![SettingRow::Vsync],
+        SettingCategory::Graphics => vec![SettingRow::FpsCap],
         SettingCategory::Debug => vec![SettingRow::MetronomeSound, SettingRow::DebugHud],
     }
 }
@@ -155,7 +155,7 @@ impl SettingRow {
                 SettingCategory::Gameplay
             }
             SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => SettingCategory::Input,
-            SettingRow::Vsync => SettingCategory::Graphics,
+            SettingRow::FpsCap => SettingCategory::Graphics,
             SettingRow::MetronomeSound | SettingRow::DebugHud => SettingCategory::Debug,
             SettingRow::LpMuting | SettingRow::DrumHitSound => SettingCategory::Gameplay,
             SettingRow::HitSoundPriorityHh
@@ -186,8 +186,7 @@ impl SettingRow {
     pub(crate) fn is_toggle(self) -> bool {
         matches!(
             self,
-            SettingRow::Vsync
-                | SettingRow::MetronomeSound
+            SettingRow::MetronomeSound
                 | SettingRow::LpMuting
                 | SettingRow::DrumHitSound
                 | SettingRow::DebugHud
@@ -196,7 +195,6 @@ impl SettingRow {
 
     pub(crate) fn toggle_value(self, config: &GameConfig) -> bool {
         match self {
-            SettingRow::Vsync => config.vsync,
             SettingRow::MetronomeSound => config.metronome_sound,
             SettingRow::LpMuting => config.lp_muting,
             SettingRow::DrumHitSound => config.drum_hit_sound,
@@ -236,7 +234,7 @@ impl SettingRow {
             SettingRow::SystemAction(action) => action.label(),
             SettingRow::TimingOffset => "Timing offset",
             SettingRow::SongRate => "Song rate",
-            SettingRow::Vsync => "VSync",
+            SettingRow::FpsCap => "FPS cap",
             SettingRow::MetronomeSound => "Metronome sound",
             SettingRow::LpMuting => "LP muting",
             SettingRow::DrumHitSound => "Drum hit sound",
@@ -266,7 +264,7 @@ impl SettingRow {
             SettingRow::SongRate => {
                 "Song playback rate. Practice mode only during play; always editable from menus."
             }
-            SettingRow::Vsync => "Vertical sync for the game window.",
+            SettingRow::FpsCap => "Frame rate cap (VSync / 60 / 120 / 144 / 240 / Unlimited). Hotkey: F6.",
             SettingRow::MetronomeSound => "Play metronome clicks during gameplay.",
             SettingRow::LpMuting => "Let left pedal close/choke hi-hat WAVs like DTXMania.",
             SettingRow::DrumHitSound => "Play chart WAV when you manually hit drum notes.",
@@ -318,7 +316,7 @@ impl SettingRow {
             }
             SettingRow::TimingOffset => format!("{:+.0}ms", config.timing_offset * 1000.0),
             SettingRow::SongRate => format!("{:.2}x", config.song_playback_rate),
-            SettingRow::Vsync => on_off(config.vsync),
+            SettingRow::FpsCap => config.fps_cap.label().to_string(),
             SettingRow::MetronomeSound => on_off(config.metronome_sound),
             SettingRow::LpMuting => on_off(config.lp_muting),
             SettingRow::DrumHitSound => on_off(config.drum_hit_sound),

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_brp_extras::BrpExtrasPlugin;
 
-use bevy::window::{MonitorSelection, PresentMode, Window, WindowMode, WindowPlugin};
+use bevy::window::{MonitorSelection, Window, WindowMode, WindowPlugin};
 use bevy_kira_audio::prelude::*;
 use dtxpt::input::{InputBindings, midi};
 use dtxpt::song_library;
@@ -15,7 +15,7 @@ use crate::current_song::{
     CurrentSong, align_library_to_current_song, enrich_current_song_from_library,
 };
 use crate::gameplay::clock::{ChartClock, RenderStats};
-use crate::gameplay::hotkeys::winit_settings_for_vsync;
+
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::plugin::GameplayPlugin;
 use crate::gameplay::run::{RunState, SelectedChartPath};
@@ -35,7 +35,7 @@ impl Plugin for DtxptPlugin {
         let config = load_game_config();
         let input_bindings = InputBindings::from_config(&config.bindings);
         let audio_mix = AudioMix::from_config(&config);
-        let vsync = config.vsync;
+        let fps_cap = config.fps_cap;
         let score_store = load_score_store();
         let chart_path = initial_chart_path(&config);
         let (mut song_library, song_scan) =
@@ -58,7 +58,7 @@ impl Plugin for DtxptPlugin {
         let selected_chart = SelectedChartPath(current_song.chart_path.clone());
 
         app.insert_resource(ClearColor(Color::srgb(0.08, 0.09, 0.12)))
-            .insert_resource(winit_settings_for_vsync(vsync))
+            .insert_resource(fps_cap.winit_settings())
             .insert_resource(config)
             .insert_resource(input_bindings)
             .insert_resource(audio_mix)
@@ -95,15 +95,7 @@ impl Plugin for DtxptPlugin {
                             } else {
                                 (REF_WIDTH as u32, REF_HEIGHT as u32).into()
                             },
-                            present_mode: if vsync {
-                                PresentMode::AutoVsync
-                            } else {
-                                // AutoNoVsync capped to display rate; Immediate is
-                                // unbuffered single-present for minimum input latency.
-                                // Tearing is acceptable for rhythm games where the eye
-                                // is on the judgement line.
-                                PresentMode::Immediate
-                            },
+                            present_mode: fps_cap.present_mode(),
                             ..default()
                         }
                     }),

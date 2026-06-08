@@ -10,7 +10,7 @@ use crate::gameplay::clock::{ChartClock, RenderStats};
 use crate::gameplay::constants::FRAME_STATS_SMOOTHING;
 use crate::gameplay::diagnostics::PlaybackDiagnostics;
 use crate::gameplay::gauge::gauge_fill_color;
-use crate::gameplay::hotkeys::present_mode_has_vsync;
+use crate::config::GameConfig;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::run::RunState;
 use crate::gameplay::scoring::{accuracy_pct, display_score};
@@ -79,6 +79,7 @@ pub(crate) fn sync_debug_hud_visibility(
 pub(crate) fn update_hud(
     chart: Res<Chart>,
     run: Res<RunState>,
+    config: Res<GameConfig>,
     pause_state: Res<State<PauseState>>,
     clock: Res<ChartClock>,
     mix: Res<AudioMix>,
@@ -153,15 +154,7 @@ pub(crate) fn update_hud(
     };
     let px_per_sec = layout.scroll_px_per_sec(run.lane_speed);
     let present_mode_text = if let Ok(window) = windows.single() {
-        format!(
-            "{:?} ({})",
-            window.present_mode,
-            if present_mode_has_vsync(window.present_mode) {
-                "vsync"
-            } else {
-                "no-vsync"
-            }
-        )
+        format!("{:?}", window.present_mode)
     } else {
         "n/a".to_string()
     };
@@ -170,7 +163,7 @@ pub(crate) fn update_hud(
     let pending_decode = decode.as_ref().map(|r| r.pending).unwrap_or(0);
 
     let debug_text = format!(
-        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Present {}  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms\nDiag spikes={} peak={:.1}ms metro={} preempt={} despawn={} decode={} midi={} voices={live_voices} decode_pending={pending_decode}",
+        "{} | {} | {} | {}\nTime {}  Audio {:.3}s  Visual {:.3}s  Offset {:+.0}ms  {}{}\nScroll {:.2}x ({:.0}px/s)  Song {:.2}x  Vol M/B/D {:.0}/{:.0}/{:.0}%  Metro {}  LPmute {}  HitSound {}\nRender {:.1}fps {:.2}ms  Cap {} ({})  Drift a/v/c {:+.1}/{:+.1}/{:+.1}ms\nDiag spikes={} peak={:.1}ms metro={} preempt={} despawn={} decode={} midi={} voices={live_voices} decode_pending={pending_decode}",
         chart.title,
         chart.source,
         run.play_mode.label(),
@@ -203,6 +196,7 @@ pub(crate) fn update_hud(
         stats.fps,
         stats.frame_ms,
         present_mode_text,
+        config.fps_cap.label(),
         clock.audio_step_ms,
         clock.visual_drift_ms,
         clock.visual_correction_ms,
