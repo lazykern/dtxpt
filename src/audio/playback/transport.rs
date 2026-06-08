@@ -158,9 +158,20 @@ pub(crate) fn sync_elapsed_from_audio(
     clock.visual_drift_ms = (target_visual - clock.visual_elapsed) * 1000.0;
     clock.visual_correction_ms = per_step_correction * 1000.0;
 
-    // EMA smooth the true visual toward the smoothed one used by rendering. Hides
-    // catch-up jumps and song-rate changes from the user. Brief ~5 frame lag.
-    clock.visual_smoothed += (clock.visual_elapsed - clock.visual_smoothed) * VISUAL_SMOOTHING_ALPHA;
+    // Adaptive EMA smoothing. Big jumps (catch-up from heavy hitch) use a slow
+    // alpha to fully hide the teleport; small normal-frame steps use a fast alpha
+    // for minimal lag. Tracks prev_visual_smoothed for diagnostics + future
+    // sub-frame interpolation hook.
+    clock.prev_visual_smoothed = clock.visual_smoothed;
+    let jump = (clock.visual_elapsed - clock.visual_smoothed).abs();
+    let alpha = if jump > VISUAL_SMOOTH_BIG_THRESHOLD {
+        VISUAL_SMOOTHING_ALPHA_BIG
+    } else if jump > VISUAL_SMOOTH_MEDIUM_THRESHOLD {
+        VISUAL_SMOOTHING_ALPHA_MEDIUM
+    } else {
+        VISUAL_SMOOTHING_ALPHA_NORMAL
+    };
+    clock.visual_smoothed += (clock.visual_elapsed - clock.visual_smoothed) * alpha;
 
     run.raw_elapsed = clock.audio_elapsed;
     run.elapsed = clock.judgement_elapsed;
@@ -220,6 +231,7 @@ pub(crate) fn set_clock_to_time(clock: &mut ChartClock, run: &mut RunState, targ
     clock.judgement_elapsed = target + run.timing_offset;
     clock.visual_elapsed = clock.judgement_elapsed;
     clock.visual_smoothed = clock.judgement_elapsed;
+    clock.prev_visual_smoothed = clock.judgement_elapsed;
     clock.audio_step_ms = 0.0;
     clock.visual_drift_ms = 0.0;
     clock.visual_correction_ms = 0.0;

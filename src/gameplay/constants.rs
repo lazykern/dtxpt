@@ -31,10 +31,18 @@ pub const MAX_CATCHUP_SUB_STEPS: i32 = 4;
 /// Wall-clock CPU budget for the catch-up loop, mirroring osu!lazer's
 /// `max_catchup_milliseconds`. Prevents a single hitch from monopolising the frame.
 pub const MAX_CATCHUP_CPU_MS: u128 = 10;
-/// EMA factor for `ChartClock.visual_smoothed`. New = old + (true - old) * alpha.
-/// alpha=0.5 -> recovers ~75% per frame, fully caught up in ~5 frames. Higher =
-/// less smoothing (more jump visibility), lower = more lag.
-pub const VISUAL_SMOOTHING_ALPHA: f32 = 0.5;
+/// EMA factor thresholds for adaptive smoothing. When |visual_elapsed - visual_smoothed|
+/// exceeds the big/small thresholds, the smaller alpha (more smoothing) is used to
+/// hide the jump. Below the small threshold, the larger alpha (less lag) is used.
+/// - 0.7 normal frame (~7% lag, snappy)
+/// - 0.5 medium step (catch-up or rate change)
+/// - 0.3 big jump (heavy hitch, fully hide the teleport)
+pub const VISUAL_SMOOTHING_ALPHA_NORMAL: f32 = 0.7;
+pub const VISUAL_SMOOTHING_ALPHA_MEDIUM: f32 = 0.5;
+pub const VISUAL_SMOOTHING_ALPHA_BIG: f32 = 0.3;
+/// Jump sizes (seconds) that trigger medium/big alpha.
+pub const VISUAL_SMOOTH_MEDIUM_THRESHOLD: f32 = 0.020;
+pub const VISUAL_SMOOTH_BIG_THRESHOLD: f32 = 0.040;
 pub const FRAME_STATS_SMOOTHING: f32 = 0.12;
 pub const SEEK_STEP_SECS: f32 = 5.0;
 pub const SONG_RATE_STEP: f32 = 0.05;
