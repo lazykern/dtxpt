@@ -8,7 +8,9 @@ use bevy_kira_audio::AudioSource;
 use bevy_kira_audio::prelude::*;
 use kira::sound::static_sound::StaticSoundData;
 
-use crate::audio::{AudioMix, MixKind, menu_fade_in_tween, menu_fade_out_tween};
+use crate::audio::{
+    AudioMix, MixKind, instant_audio_tween, menu_fade_in_tween, menu_fade_out_tween,
+};
 use crate::current_song::CurrentSong;
 
 #[derive(Resource)]
@@ -33,6 +35,13 @@ pub struct MenuMusicState {
     pending_volume: i32,
     debounce: Timer,
     loading: Option<MenuBgmLoadTask>,
+    /// Handle of the currently-looping AudioInstance, used to push live
+    /// volume changes via `set_decibels` (the channel only bakes volume
+    /// into the initial `play()` call).
+    current_handle: Option<Handle<AudioInstance>>,
+    /// Last dB we pushed to the live instance; `None` forces re-apply on
+    /// the next opportunity (e.g. just after a fresh play).
+    last_applied_db: Option<f32>,
 }
 
 impl MenuMusicState {
@@ -58,17 +67,16 @@ fn play_cached_bgm(
     cache: &MenuBgmCache,
     channel: &AudioChannel<MenuMusicTrack>,
     mix: &AudioMix,
-) -> bool {
-    let Some(source) = cache.sources.get(path) else {
-        return false;
-    };
-    channel
+) -> Option<Handle<AudioInstance>> {
+    let source = cache.sources.get(path)?;
+    let handle = channel
         .play(source.clone())
         .with_volume(mix.volume_db(volume, MixKind::Bgm))
         .start_from(0.0)
         .loop_from(0.0)
-        .fade_in(menu_fade_in_tween());
-    true
+        .fade_in(menu_fade_in_tween())
+        .handle();
+    Some(handle)
 }
 
 pub fn update_menu_music(
@@ -77,9 +85,26 @@ pub fn update_menu_music(
     asset_server: Res<AssetServer>,
     channel: Res<AudioChannel<MenuMusicTrack>>,
     mix: Res<AudioMix>,
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
     mut cache: ResMut<MenuBgmCache>,
     mut state: ResMut<MenuMusicState>,
 ) {
+    // Live-volume push: any time mix or pending_volume drift, push the new
+    // dB to the currently-looping instance. Skipped during track changes
+    // (playing_path lags pending_path) and when nothing is playing yet.
+    if let Some(handle) = state.current_handle.clone()
+        && state.playing_path.is_some()
+        && state.playing_path == state.pending_path
+    {
+        let target_db = mix.volume_db(state.pending_volume, MixKind::Bgm);
+        if state.last_applied_db != Some(target_db)
+            && let Some(inst) = audio_instances.get_mut(&handle)
+        {
+            inst.set_decibels(target_db, instant_audio_tween());
+            state.last_applied_db = Some(target_db);
+        }
+    }
+
     let pending_now = state.pending_path.clone();
     if let Some(loading) = state.loading.as_mut() {
         let loading_path = loading.path.clone();
@@ -93,17 +118,20 @@ pub fn update_menu_music(
                         let source = asset_server.add(AudioSource { sound });
                         cache.sources.insert(loading_path.clone(), source);
                         state.playing_path = Some(loading_path.clone());
-                        play_cached_bgm(
+                        state.current_handle = play_cached_bgm(
                             &loading_path,
                             state.pending_volume,
                             &cache,
                             &channel,
                             &mix,
                         );
+                        state.last_applied_db = None;
                     }
                     Err(err) => {
                         warn!("failed to load menu BGM {}: {err}", loading_path.display());
                         state.playing_path = None;
+                        state.current_handle = None;
+                        state.last_applied_db = None;
                     }
                 }
             }
@@ -124,6 +152,8 @@ pub fn update_menu_music(
         state.clear_loading();
         if state.playing_path.is_some() {
             channel.stop().fade_out(menu_fade_out_tween());
+            state.current_handle = None;
+            state.last_applied_db = None;
         }
     }
 
@@ -137,11 +167,15 @@ pub fn update_menu_music(
 
     let Some(path) = state.pending_path.clone() else {
         state.playing_path = None;
+        state.current_handle = None;
+        state.last_applied_db = None;
         return;
     };
 
-    if play_cached_bgm(&path, state.pending_volume, &cache, &channel, &mix) {
+    if let Some(handle) = play_cached_bgm(&path, state.pending_volume, &cache, &channel, &mix) {
         state.playing_path = Some(path);
+        state.current_handle = Some(handle);
+        state.last_applied_db = None;
         return;
     }
 
