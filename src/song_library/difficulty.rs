@@ -6,7 +6,7 @@ pub fn difficulty_rank(label: &str) -> usize {
         "ADVANCED" | "REGULAR" | "ADV" => 2,
         "EXTREME" | "EXPERT" | "EXT" => 3,
         "MASTER" | "MSTR" => 4,
-        "ULTIMATE" | "ULT" => 5,
+        "DTXMANIA" => 5,
         _ => 99,
     }
 }

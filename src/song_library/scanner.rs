@@ -333,7 +333,7 @@ fn default_difficulty_label(index: usize) -> &'static str {
         2 => "ADVANCED",
         3 => "EXTREME",
         4 => "MASTER",
-        5 => "ULTIMATE",
+        5 => "DTXMANIA",
         _ => "DTX",
     }
 }
