@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::app::markers::{LoadingScreen, MainMenuScreen, ResultScreen, SongSelectScreen};
 use crate::app::state::{AppState, OverlayState};
 use crate::audio::{stop_menu_music, update_menu_music};
-use crate::overlays::settings::setup_global;
+use crate::overlays::settings::{setup_global, track_window_focus};
 use crate::screens::common::cleanup_screen;
 use crate::screens::loading::{
     ChartLoad, poll_chart_load, reset_chart_load, setup_loading_screen, start_chart_load,
@@ -31,7 +31,7 @@ impl Plugin for ScreensPlugin {
             .add_systems(Startup, (setup_global, setup_menu_background).chain())
             .add_systems(
                 Update,
-                (sync_menu_background_visibility, poll_song_library_scan),
+                (track_window_focus, sync_menu_background_visibility, poll_song_library_scan),
             )
             .add_systems(OnEnter(AppState::MainMenu), setup_main_menu)
             .add_systems(

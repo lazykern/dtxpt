@@ -367,6 +367,14 @@ pub struct GameConfig {
     /// descends into sub-boxes (recursive). Phase F wiring.
     #[serde(default)]
     pub random_sub_box: bool,
+    /// Sleep time (ms) per frame when the window is unfocused.
+    /// BocuD `n非フォーカス時スリープms` (`CConfigIni.cs`).
+    #[serde(default)]
+    pub unfocused_sleep_ms: u32,
+    /// Sleep every N frames when unfocused.
+    /// BocuD `nSleepNMsEveryFrame`.
+    #[serde(default)]
+    pub sleep_n_frames: u32,
     /// BocuD `bCompactMode`. Skip Title stage on startup.
     #[serde(default)]
     pub compact_mode: bool,
@@ -439,6 +447,8 @@ impl Default for GameConfig {
             fps_cap: FpsCap::default(),
             stoic_mode: false,
             random_sub_box: false,
+            unfocused_sleep_ms: 1,
+            sleep_n_frames: 1,
             compact_mode: false,
             wave_drift_correction: true,
             hh_group: HHGroup::default(),

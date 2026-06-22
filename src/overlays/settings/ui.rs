@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::window::{PrimaryWindow, Window};
+use bevy::window::{PrimaryWindow, Window, WindowFocused};
 use bevy::winit::WinitSettings;
 use bevy_framepace::FramepaceSettings;
 
@@ -21,6 +21,27 @@ use super::{
     SettingsUiCache, filtered_settings,
 };
 
+/// Bevy window focus resource that the unfocused-sleep system reads
+/// to throttle the frame loop. dtxpt's first-pass frame pacing is
+/// owned by `bevy_framepace`; this hook just records the most
+/// recent focus state and lets a future pass wire the actual sleep.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct WindowFocusState {
+    pub focused: bool,
+}
+
+/// Update `WindowFocusState` from Bevy's `WindowFocused` event. This
+/// is the data side of H8 — the actual frame-loop sleep is wired in
+/// a follow-up that integrates with `bevy_framepace`.
+pub fn track_window_focus(
+    mut events: bevy::ecs::message::MessageReader<WindowFocused>,
+    mut state: ResMut<WindowFocusState>,
+) {
+    for ev in events.read() {
+        state.focused = ev.focused;
+    }
+}
+
 pub fn setup_global(
     mut commands: Commands,
     config: Res<GameConfig>,
@@ -29,6 +50,7 @@ pub fn setup_global(
     mut framepace: ResMut<FramepaceSettings>,
     mut layout: ResMut<PlayfieldLayout>,
 ) {
+    commands.init_resource::<WindowFocusState>();
     if let Ok(mut window) = windows.single_mut() {
         *layout = PlayfieldLayout::from_window(&window);
         apply_fps_cap(
