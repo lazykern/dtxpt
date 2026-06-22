@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 
 use crate::chart::model::{
     BgaEvent, BgaImageDef, BgaPanRaw, BgaRect, Chart, ChartNote, EmptyHitEvent, LongNote, NoteState,
-    ScheduledAudio, ScheduledAudioKind, WavInfo, WavRole,
+    ScheduledAudio, ScheduledAudioKind, VideoDef, VideoEvent, VideoMode, WavInfo, WavRole,
 };
 use crate::chart::timing::{ChartTiming, ChipPlayTimeComputeMode};
 use crate::input::lanes::{
@@ -62,6 +62,11 @@ enum DtxEvent {
         layer: u8,
         bmp_id: u32,
         swap: bool,
+    },
+    Video {
+        tick: u32,
+        video_id: u32,
+        mode: VideoMode,
     },
     EmptyHit {
         tick: u32,
@@ -142,6 +147,9 @@ pub fn parse_dtx_chart_with_compute_mode(
     let mut bga_images = Vec::new();
     let mut background_image = None;
     let mut bgapan_registry: BTreeMap<u32, BgaPanRaw> = BTreeMap::new();
+    let mut avi_files: Vec<VideoDef> = Vec::new();
+    let mut avipan_registry: BTreeMap<u32, BgaPanRaw> = BTreeMap::new();
+    let mut premovie: Option<String> = None;
     let mut wav_volumes: HashMap<u32, i32> = HashMap::new();
     let mut wav_pans: HashMap<u32, i32> = HashMap::new();
     let mut bgm_wav = None;
@@ -213,6 +221,28 @@ pub fn parse_dtx_chart_with_compute_mode(
             {
                 bgapan_registry.insert(id, pan);
             }
+            continue;
+        }
+        if command.len() == 5 && command[..3].eq_ignore_ascii_case("AVI") {
+            let rest = &command[3..];
+            if let Ok(id) = base36_str(rest) {
+                avi_files.push(VideoDef {
+                    id,
+                    filename: value.to_string(),
+                });
+            }
+            continue;
+        }
+        if command.len() >= 7 && command[..6].eq_ignore_ascii_case("AVIPAN") {
+            if let Ok(id) = base36_str(&command[6..])
+                && let Some(pan) = parse_bgapan_directive(value)
+            {
+                avipan_registry.insert(id, pan);
+            }
+            continue;
+        }
+        if command.eq_ignore_ascii_case("PREMOVIE") {
+            premovie = Some(value.to_string());
             continue;
         }
         if command.eq_ignore_ascii_case("BACKGROUND") || command.eq_ignore_ascii_case("STAGEFILE") {
@@ -288,6 +318,25 @@ pub fn parse_dtx_chart_with_compute_mode(
                             layer,
                             bmp_id,
                             swap,
+                        });
+                    }
+                } else if channel == 0x54 {
+                    // Movie — BGA layer area. (`EChannel.cs:64`, `EChannel.Movie`.)
+                    if let Ok(video_id) = base36_pair(pair) {
+                        events.push(DtxEvent::Video {
+                            tick,
+                            video_id,
+                            mode: VideoMode::Movie,
+                        });
+                    }
+                } else if channel == 0x5A {
+                    // MovieFull — fullscreen behind gameplay.
+                    // (`EChannel.cs:70`, `EChannel.MovieFull`.)
+                    if let Ok(video_id) = base36_pair(pair) {
+                        events.push(DtxEvent::Video {
+                            tick,
+                            video_id,
+                            mode: VideoMode::MovieFull,
                         });
                     }
                 } else if is_dtx_se_channel(channel) {
@@ -634,6 +683,25 @@ pub fn parse_dtx_chart_with_compute_mode(
         .collect::<Vec<_>>();
     bga_events.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.layer.cmp(&b.layer)));
 
+    let mut video_events = events
+        .iter()
+        .filter_map(|event| match *event {
+            DtxEvent::Video {
+                tick,
+                video_id,
+                mode,
+            } => Some(VideoEvent {
+                time: timing.time_at_tick(tick),
+                video_id,
+                mode,
+                avipan: avipan_registry.get(&video_id).map(|raw| raw.resolve(&timing)),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    video_events.sort_by(|a, b| a.time.total_cmp(&b.time));
+    bga_events.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.layer.cmp(&b.layer)));
+
     let metronome_beats = build_metronome_beats(&timing, end_tick);
 
     Ok((
@@ -656,6 +724,10 @@ pub fn parse_dtx_chart_with_compute_mode(
             background_image,
             chart_dir: chart_dir.into(),
             bgapan: bgapan_registry,
+            avi_files,
+            video_events,
+            avipan: avipan_registry,
+            premovie,
         },
         timing,
     ))
@@ -1098,6 +1170,117 @@ mod tests {
             assert_eq!(chart.bga_events[0].layer, expected_layer);
             assert!(chart.bga_events[0].swap);
         }
+    }
+
+    #[test]
+    fn avi_directive_parses_to_video_def() {
+        let text = "\
+#TITLE: avi\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#AVI01: bg.avi\n\
+#00011: 01\n\
+#00054: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "avi.dtx", ".").unwrap();
+        assert_eq!(chart.avi_files.len(), 1);
+        assert_eq!(chart.avi_files[0].id, 1);
+        assert_eq!(chart.avi_files[0].filename, "bg.avi");
+        assert_eq!(chart.video_events.len(), 1);
+        assert_eq!(chart.video_events[0].video_id, 1);
+        assert_eq!(chart.video_events[0].mode, VideoMode::Movie);
+    }
+
+    #[test]
+    fn movie_full_channel_maps_to_movie_full_mode() {
+        let text = "\
+#TITLE: movie full\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#AVI01: full.avi\n\
+#00011: 01\n\
+#0005A: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "moviefull.dtx", ".").unwrap();
+        assert_eq!(chart.video_events.len(), 1);
+        assert_eq!(chart.video_events[0].mode, VideoMode::MovieFull);
+    }
+
+    #[test]
+    fn premovie_directive_sets_chart_premovie() {
+        let text = "\
+#TITLE: preview\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#PREMOVIE: preview.avi\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "premovie.dtx", ".").unwrap();
+        assert_eq!(chart.premovie.as_deref(), Some("preview.avi"));
+    }
+
+    #[test]
+    fn avipan_directive_attaches_to_video_event_by_id() {
+        let text = "\
+#TITLE: avipan\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#AVI01: v.avi\n\
+#AVIPAN01 01 320 240 640 480 0 0 320 240 0 0 640 480 480\n\
+#00011: 01\n\
+#00054: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "avipan.dtx", ".").unwrap();
+        assert_eq!(chart.video_events.len(), 1);
+        let pan = chart.video_events[0].avipan.expect("AVIPAN attached");
+        assert_eq!(pan.src_start.w, 320);
+        assert_eq!(pan.src_end.w, 640);
+        assert_eq!(pan.dst_start.w, 320);
+        assert_eq!(pan.dst_end.w, 640);
+    }
+
+    #[test]
+    fn smoke_load_t_sukinami_chart_has_avi_video_events() {
+        // Locally-staged real chart; the path is gated on the file's
+        // existence so the test is skipped in environments without
+        // downloaded charts. Validates that the parser picks up the
+        // `#AVI01: bg.avi` directive and the `#00054` channel on a real
+        // BocuD-era chart.
+        let entries: Vec<_> = std::fs::read_dir("/home/lazykern/lab/dtxpt/charts")
+            .ok()
+            .map(|it| it.flatten().collect())
+            .unwrap_or_default();
+        let target = entries.into_iter().find(|e| {
+            e.path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("Tsukinami"))
+        });
+        let Some(dir) = target else {
+            // No Tsukinami chart in this env — skip silently.
+            return;
+        };
+        let chart_path = dir.path().join("ext.dtx");
+        if !chart_path.exists() {
+            return;
+        }
+        let raw = std::fs::read(&chart_path).expect("read Tsukinami ext.dtx");
+        let text = crate::chart::dtx::text::decode_bytes(&raw);
+        let (chart, _timing) = parse_dtx_chart(&text, "ext.dtx", ".")
+            .expect("parse Tsukinami ext.dtx");
+        assert!(
+            chart.avi_files.iter().any(|v| v.filename == "bg.avi"),
+            "expected AVI bg.avi in {:?}",
+            chart_path
+        );
+        assert!(
+            !chart.video_events.is_empty(),
+            "expected at least one Movie channel event on the Tsukinami chart"
+        );
+        assert!(
+            chart.video_events.iter().any(|e| e.mode == VideoMode::Movie),
+            "expected at least one VideoMode::Movie event"
+        );
     }
 
     #[test]

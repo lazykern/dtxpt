@@ -353,6 +353,10 @@ mod tests {
             background_image: None,
             chart_dir: String::new(),
             bgapan: std::collections::BTreeMap::new(),
+            avi_files: Vec::new(),
+            video_events: Vec::new(),
+            avipan: std::collections::BTreeMap::new(),
+            premovie: None,
         };
         let progress = progress_string(&chart);
         assert_eq!(progress.len(), 64);

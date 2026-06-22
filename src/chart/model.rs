@@ -51,6 +51,19 @@ pub struct Chart {
     /// to that layer chip
     /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1384`).
     pub bgapan: BTreeMap<u32, BgaPanRaw>,
+    /// `#AVIxx` video file definitions, parallel to `#BMPxx`. BocuD uses
+    /// these for Movie / MovieFull / PREMOVIE / RESULTMOVIE playback
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1080`).
+    pub avi_files: Vec<VideoDef>,
+    /// Timed video playback events (`#mmm54` Movie, `#mmm5A` MovieFull).
+    pub video_events: Vec<VideoEvent>,
+    /// `#AVIPANxx` registry — pan/size animation for video events,
+    /// parallel to BGAPAN
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1082`).
+    pub avipan: BTreeMap<u32, BgaPanRaw>,
+    /// `#PREMOVIE` directive value — song-select preview video
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1101`).
+    pub premovie: Option<String>,
 }
 
 /// Long note (sustained chip) for guitar/bass. `start_time` is when
@@ -88,6 +101,10 @@ impl Default for Chart {
             background_image: None,
             chart_dir: String::new(),
             bgapan: BTreeMap::new(),
+            avi_files: Vec::new(),
+            video_events: Vec::new(),
+            avipan: BTreeMap::new(),
+            premovie: None,
         }
     }
 }
@@ -127,6 +144,37 @@ pub struct BgaPan {
     pub dst_start: BgaRect,
     pub dst_end: BgaRect,
     pub transition_seconds: f32,
+}
+
+/// Video file definition from `#AVIxx`. The parser populates this list;
+/// the renderer consults it to resolve `VideoEvent.video_id` lookups.
+/// Mirrors `CDTX.listAVI`
+/// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1080`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VideoDef {
+    pub id: u32,
+    pub filename: String,
+}
+
+/// Timed video playback event. `mode` distinguishes the four BocuD
+/// playback surfaces: normal Movie (BGA layer area), MovieFull (full
+/// screen behind gameplay), and future PREMOVIE/RESULTMOVIE rendering.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoEvent {
+    pub time: f32,
+    pub video_id: u32,
+    pub mode: VideoMode,
+    pub avipan: Option<BgaPan>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoMode {
+    /// `Movie` channel 0x54. Plays in the BGA layer area.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/EChannel.cs:64`)
+    Movie,
+    /// `MovieFull` channel 0x5A. Plays fullscreen behind gameplay.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/EChannel.cs:70`)
+    MovieFull,
 }
 
 /// Raw BGAPAN parameters as parsed from the directive, before the timing
@@ -570,6 +618,10 @@ mod tests {
             background_image: None,
             chart_dir: String::new(),
             bgapan: BTreeMap::new(),
+            avi_files: Vec::new(),
+            video_events: Vec::new(),
+            avipan: BTreeMap::new(),
+            premovie: None,
         };
         let bgm_time = chart_bgm_start_time(&chart);
         let stick_se_times = [2.0];
