@@ -352,6 +352,7 @@ mod tests {
             bga_events: Vec::new(),
             background_image: None,
             chart_dir: String::new(),
+            bgapan: std::collections::BTreeMap::new(),
         };
         let progress = progress_string(&chart);
         assert_eq!(progress.len(), 64);

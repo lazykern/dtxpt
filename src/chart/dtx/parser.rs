@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Result, anyhow};
 
 use crate::chart::model::{
-    BgaEvent, BgaImageDef, Chart, ChartNote, EmptyHitEvent, LongNote, NoteState, ScheduledAudio,
-    ScheduledAudioKind, WavInfo, WavRole,
+    BgaEvent, BgaImageDef, BgaPanRaw, BgaRect, Chart, ChartNote, EmptyHitEvent, LongNote, NoteState,
+    ScheduledAudio, ScheduledAudioKind, WavInfo, WavRole,
 };
 use crate::chart::timing::{ChartTiming, ChipPlayTimeComputeMode};
 use crate::input::lanes::{
@@ -61,6 +61,7 @@ enum DtxEvent {
         tick: u32,
         layer: u8,
         bmp_id: u32,
+        swap: bool,
     },
     EmptyHit {
         tick: u32,
@@ -85,22 +86,36 @@ fn merge_wav_role(roles: &mut HashMap<u32, WavRole>, wav: u32, role: WavRole) {
         .or_insert(role);
 }
 
-fn dtx_bga_channel_to_layer(channel: u32) -> Option<u8> {
+/// Map a DTX channel id to its BGA layer (1..=8), if any. Returns
+/// `(layer, swap)` where `swap = true` for `BGALayerN_Swap` channels that
+/// reference a `BMPTEX` rather than a `BMP`.
+///
+/// Channels per DTXManiaNX-BocuD `EChannel.cs`:
+/// - `BGALayer1 = 0x04`, `BGALayer2 = 0x07`, `BGALayer3 = 0x55`,
+///   `BGALayer4 = 0x56`, `BGALayer5 = 0x57`, `BGALayer6 = 0x58`,
+///   `BGALayer7 = 0x59`, `BGALayer8 = 0x60`.
+/// - `BGALayer1_Swap = 0xC4`, `BGALayer2_Swap = 0xC7`,
+///   `BGALayer3_Swap = 0xD5`, `BGALayer4_Swap = 0xD6`,
+///   `BGALayer5_Swap = 0xD7`, `BGALayer6_Swap = 0xD8`,
+///   `BGALayer7_Swap = 0xD9`, `BGALayer8_Swap = 0xE0`.
+fn dtx_bga_channel_to_layer(channel: u32) -> Option<(u8, bool)> {
     match channel {
-        0x04 => Some(1),
-        0x07 => Some(2),
-        0x55 => Some(3),
-        0x56 => Some(4),
-        0x57 => Some(5),
-        0x58 => Some(6),
-        0x59 => Some(7),
-        0x60 => Some(8),
-        0xC1 => Some(3),
-        0xC2 => Some(4),
-        0xC3 => Some(5),
-        0xC4 => Some(6),
-        0xC5 => Some(7),
-        0xC6 => Some(8),
+        0x04 => Some((1, false)),
+        0x07 => Some((2, false)),
+        0x55 => Some((3, false)),
+        0x56 => Some((4, false)),
+        0x57 => Some((5, false)),
+        0x58 => Some((6, false)),
+        0x59 => Some((7, false)),
+        0x60 => Some((8, false)),
+        0xC4 => Some((1, true)),
+        0xC7 => Some((2, true)),
+        0xD5 => Some((3, true)),
+        0xD6 => Some((4, true)),
+        0xD7 => Some((5, true)),
+        0xD8 => Some((6, true)),
+        0xD9 => Some((7, true)),
+        0xE0 => Some((8, true)),
         _ => None,
     }
 }
@@ -126,6 +141,7 @@ pub fn parse_dtx_chart_with_compute_mode(
     let mut wav_files = Vec::new();
     let mut bga_images = Vec::new();
     let mut background_image = None;
+    let mut bgapan_registry: BTreeMap<u32, BgaPanRaw> = BTreeMap::new();
     let mut wav_volumes: HashMap<u32, i32> = HashMap::new();
     let mut wav_pans: HashMap<u32, i32> = HashMap::new();
     let mut bgm_wav = None;
@@ -188,6 +204,14 @@ pub fn parse_dtx_chart_with_compute_mode(
                     id,
                     filename: value.to_string(),
                 });
+            }
+            continue;
+        }
+        if command.len() >= 7 && command[..6].eq_ignore_ascii_case("BGAPAN") {
+            if let Ok(id) = base36_str(&command[6..])
+                && let Some(pan) = parse_bgapan_directive(value)
+            {
+                bgapan_registry.insert(id, pan);
             }
             continue;
         }
@@ -257,12 +281,13 @@ pub fn parse_dtx_chart_with_compute_mode(
                     if let Some(bpm) = bpm_defs.get(&base36_pair(pair)?) {
                         events.push(DtxEvent::Bpm { tick, bpm: *bpm });
                     }
-                } else if let Some(layer) = dtx_bga_channel_to_layer(channel) {
+                } else if let Some((layer, swap)) = dtx_bga_channel_to_layer(channel) {
                     if let Ok(bmp_id) = base36_pair(pair) {
                         events.push(DtxEvent::Bga {
                             tick,
                             layer,
                             bmp_id,
+                            swap,
                         });
                     }
                 } else if is_dtx_se_channel(channel) {
@@ -596,10 +621,13 @@ pub fn parse_dtx_chart_with_compute_mode(
                 tick,
                 layer,
                 bmp_id,
+                swap,
             } => Some(BgaEvent {
                 time: timing.time_at_tick(tick),
                 layer,
                 bmp_id,
+                bgapan: bgapan_registry.get(&bmp_id).map(|raw| raw.resolve(&timing)),
+                swap,
             }),
             _ => None,
         })
@@ -627,6 +655,7 @@ pub fn parse_dtx_chart_with_compute_mode(
             bga_events,
             background_image,
             chart_dir: chart_dir.into(),
+            bgapan: bgapan_registry,
         },
         timing,
     ))
@@ -640,6 +669,68 @@ fn normalize_skill_level(level: f32, decimal: bool, level_dec: i32) -> f32 {
     } else {
         level / 10.0 + level_dec as f32 / 100.0
     }
+}
+
+/// Parse the 14-parameter BGAPAN directive body. Returns `None` on
+/// malformed input (BocuD traces an error and skips the line in that
+/// case: `references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:5688`).
+///
+/// Parameter order matches BocuD's `t入力_行解析_BGAPAN`:
+///   0: BMP番号
+///   1: 開始サイズ W
+///   2: 開始サイズ H
+///   3: 終了サイズ W
+///   4: 終了サイズ H
+///   5: 画像側開始位置 X
+///   6: 画像側開始位置 Y
+///   7: 画像側終了位置 X
+///   8: 画像側終了位置 Y
+///   9: 表示側開始位置 X
+///  10: 表示側開始位置 Y
+///  11: 表示側終了位置 X
+///  12: 表示側終了位置 Y
+///  13: 移動時間 ct
+fn parse_bgapan_directive(value: &str) -> Option<BgaPanRaw> {
+    let nums: Vec<i32> = value
+        .split(|c: char| c.is_whitespace() || c == ',' || c == '(' || c == ')' || c == '[' || c == ']' || c == 'x' || c == '|')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<i32>().ok())
+        .collect();
+    if nums.len() < 14 {
+        return None;
+    }
+    // Param order per
+    // `references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:5679`:
+    //   0: BMP番号, 1-2: 開始サイズ W/H, 3-4: 終了サイズ W/H,
+    //   5-6: 画像側開始位置 X/Y, 7-8: 画像側終了位置 X/Y,
+    //   9-10: 表示側開始位置 X/Y, 11-12: 表示側終了位置 X/Y, 13: 移動時間ct.
+    Some(BgaPanRaw {
+        src_start: BgaRect {
+            x: nums[5],
+            y: nums[6],
+            w: nums[1],
+            h: nums[2],
+        },
+        src_end: BgaRect {
+            x: nums[7],
+            y: nums[8],
+            w: nums[3],
+            h: nums[4],
+        },
+        dst_start: BgaRect {
+            x: nums[9],
+            y: nums[10],
+            w: nums[1],
+            h: nums[2],
+        },
+        dst_end: BgaRect {
+            x: nums[11],
+            y: nums[12],
+            w: nums[3],
+            h: nums[4],
+        },
+        transition_ticks: nums[13].max(0),
+    })
 }
 
 #[cfg(test)]
@@ -910,5 +1001,121 @@ mod tests {
         let long = &chart.bass_long_notes[0];
         assert_eq!(long.start_time, 0.0);
         assert!(long.end_time > long.start_time);
+    }
+
+    #[test]
+    fn bgapan_directive_parses_14_int_params() {
+        // Per `references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:5679`
+        // BGAPAN takes 14 int params: BMP番号, 開始サイズW/H, 終了サイズW/H,
+        // 画像側開始位置X/Y, 画像側終了位置X/Y, 表示側開始位置X/Y,
+        // 表示側終了位置X/Y, 移動時間ct.
+        let text = "\
+#TITLE: bgapan test\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#BGAPAN01 02 100 50 200 100 0 0 50 25 0 0 100 50 480\n\
+#00011: 01\n\
+#00004: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "bgapan.dtx", ".").unwrap();
+        let raw = chart.bgapan.get(&1).expect("BGAPAN01 registry entry");
+        assert_eq!(raw.src_start.x, 0);
+        assert_eq!(raw.src_start.y, 0);
+        assert_eq!(raw.src_start.w, 100);
+        assert_eq!(raw.src_start.h, 50);
+        assert_eq!(raw.src_end.x, 50);
+        assert_eq!(raw.src_end.y, 25);
+        assert_eq!(raw.src_end.w, 200);
+        assert_eq!(raw.src_end.h, 100);
+        assert_eq!(raw.dst_start.x, 0);
+        assert_eq!(raw.dst_start.y, 0);
+        assert_eq!(raw.dst_start.w, 100);
+        assert_eq!(raw.dst_start.h, 50);
+        assert_eq!(raw.dst_end.x, 100);
+        assert_eq!(raw.dst_end.y, 50);
+        assert_eq!(raw.dst_end.w, 200);
+        assert_eq!(raw.dst_end.h, 100);
+        assert_eq!(raw.transition_ticks, 480);
+    }
+
+    #[test]
+    fn bgapan_attaches_to_layer_chip_via_bmp_id_match() {
+        let text = "\
+#TITLE: bgapan attach\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#BGAPAN01 01 100 50 200 100 0 0 50 25 0 0 100 50 480\n\
+#00011: 01\n\
+#00004: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "bgapan_attach.dtx", ".").unwrap();
+        assert_eq!(chart.bga_events.len(), 1);
+        let pan = chart.bga_events[0]
+            .bgapan
+            .expect("BGA event attaches BGAPAN by bmp_id match");
+        assert_eq!(pan.src_start.w, 100);
+        assert_eq!(pan.src_end.w, 200);
+        assert_eq!(pan.dst_start.w, 100);
+        assert_eq!(pan.dst_end.w, 200);
+        // 480 ticks at 120 BPM, 384 ticks/measure = 480 / 384 * 2.0s = 2.5s.
+        assert!((pan.transition_seconds - 2.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn bga_swap_channel_maps_to_layer_and_marks_swap() {
+        // 0xC4 = BGALayer1_Swap (196).
+        let text = "\
+#TITLE: bga swap\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#BMPTEX01: tex.png\n\
+#00011: 01\n\
+#000C4: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "swap.dtx", ".").unwrap();
+        assert_eq!(chart.bga_events.len(), 1);
+        assert_eq!(chart.bga_events[0].layer, 1);
+        assert!(chart.bga_events[0].swap);
+    }
+
+    #[test]
+    fn bga_swap_channels_layer2_through_layer8() {
+        for (channel, expected_layer) in [
+            (0xC7u32, 2u8),
+            (0xD5, 3),
+            (0xD6, 4),
+            (0xD7, 5),
+            (0xD8, 6),
+            (0xD9, 7),
+            (0xE0, 8),
+        ] {
+            let text = format!(
+                "#TITLE: swap\n#BPM: 120\n#WAV01: kick.ogg\n#BMP01: bg.png\n#00011: 01\n#{:05X}: 01\n",
+                channel
+            );
+            let (chart, _) = parse_dtx_chart(&text, "swap.dtx", ".").unwrap();
+            assert_eq!(chart.bga_events.len(), 1);
+            assert_eq!(chart.bga_events[0].layer, expected_layer);
+            assert!(chart.bga_events[0].swap);
+        }
+    }
+
+    #[test]
+    fn bga_beatline_channels_are_not_layers() {
+        // Channels 0xC1 (BeatLineShift) and 0xC2 (BeatLineDisplay) are not
+        // BGA layer channels. The previous mapping of 0xC1..0xC6 to
+        // layers 3..8 was wrong; it should now fall through.
+        for channel in [0xC1u32, 0xC2, 0xC3, 0xC5, 0xC6] {
+            let text = format!(
+                "#TITLE: not bga\n#BPM: 120\n#WAV01: kick.ogg\n#BMP01: bg.png\n#00011: 01\n#{:05X}: 01\n",
+                channel
+            );
+            let (chart, _) = parse_dtx_chart(&text, "not_bga.dtx", ".").unwrap();
+            assert!(
+                chart.bga_events.is_empty(),
+                "channel {:#X} should not produce a BGA event",
+                channel
+            );
+        }
     }
 }

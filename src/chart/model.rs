@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use bevy::prelude::*;
 
 #[derive(Clone)]
@@ -43,6 +45,12 @@ pub struct Chart {
     /// Static background image from `BACKGROUND` / `STAGEFILE`.
     pub background_image: Option<String>,
     pub chart_dir: String,
+    /// `#BGAPANxx` registry, keyed by BGAPAN number (1..36*36-1). Populated
+    /// during parse and consulted when a `BGALayerN` chip's integer value
+    /// matches a BGAPAN number — in BocuD that attaches the pan animation
+    /// to that layer chip
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1384`).
+    pub bgapan: BTreeMap<u32, BgaPanRaw>,
 }
 
 /// Long note (sustained chip) for guitar/bass. `start_time` is when
@@ -79,6 +87,7 @@ impl Default for Chart {
             bga_events: Vec::new(),
             background_image: None,
             chart_dir: String::new(),
+            bgapan: BTreeMap::new(),
         }
     }
 }
@@ -94,6 +103,69 @@ pub struct BgaEvent {
     pub time: f32,
     pub layer: u8,
     pub bmp_id: u32,
+    /// BGAPAN crop/pan/size animation, if this layer chip referenced a
+    /// `#BGAPANxx` directive. Mirrors DTXManiaNX-BocuD's
+    /// `CChip.eBGA種別 == EBGAType.BGAPAN` path
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1389`).
+    pub bgapan: Option<BgaPan>,
+    /// True for `BGALayerN_Swap` channels; the chip references a BMPtex
+    /// (`BMPTEX`) by id rather than a BMP. Semantically the renderer
+    /// treats it identically, but the parser uses the marker to validate
+    /// that the referenced image is actually a `BMPTEX` in BocuD.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1457`).
+    pub swap: bool,
+}
+
+/// BGAPAN crop/pan/size animation parameters. `transition_seconds` is the
+/// final motion duration in seconds after the parser resolves the `ct`
+/// tick delta via the chart timing model.
+/// Mirrors `CDTX.CBGAPAN` (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:112`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BgaPan {
+    pub src_start: BgaRect,
+    pub src_end: BgaRect,
+    pub dst_start: BgaRect,
+    pub dst_end: BgaRect,
+    pub transition_seconds: f32,
+}
+
+/// Raw BGAPAN parameters as parsed from the directive, before the timing
+/// model resolves `transition_ticks` to seconds. Stored on `Chart.bgapan`
+/// during parsing; `BgaEvent.bgapan` holds the resolved form once a layer
+/// chip references it.
+#[derive(Clone, Copy, Debug)]
+pub struct BgaPanRaw {
+    pub src_start: BgaRect,
+    pub src_end: BgaRect,
+    pub dst_start: BgaRect,
+    pub dst_end: BgaRect,
+    pub transition_ticks: i32,
+}
+
+impl BgaPanRaw {
+    pub fn resolve(self, timing: &crate::chart::timing::ChartTiming) -> BgaPan {
+        let transition_seconds = if self.transition_ticks <= 0 {
+            0.0
+        } else {
+            let ct = self.transition_ticks as u32;
+            timing.time_at_tick(ct)
+        };
+        BgaPan {
+            src_start: self.src_start,
+            src_end: self.src_end,
+            dst_start: self.dst_start,
+            dst_end: self.dst_end,
+            transition_seconds,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct BgaRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
 }
 
 #[derive(Clone)]
@@ -497,6 +569,7 @@ mod tests {
             bga_events: Vec::new(),
             background_image: None,
             chart_dir: String::new(),
+            bgapan: BTreeMap::new(),
         };
         let bgm_time = chart_bgm_start_time(&chart);
         let stick_se_times = [2.0];
