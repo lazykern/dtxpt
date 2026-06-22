@@ -14,6 +14,7 @@ use crate::screens::main_menu::{
 };
 use crate::screens::menu_background::{setup_menu_background, sync_menu_background_visibility};
 use crate::screens::result::{result_input, setup_result};
+use crate::screens::stage_clear::{setup_stage_clear, setup_stage_failed, stage_clear_auto_advance};
 use crate::screens::song_select::{
     SongSelectUiState, persist_current_song_on_exit_song_select, poll_song_library_scan,
     refresh_song_select_ui, setup_song_select, song_select_card_interaction, song_select_input,
@@ -91,6 +92,13 @@ impl Plugin for ScreensPlugin {
                     .run_if(in_state(AppState::Result))
                     .run_if(in_state(OverlayState::None)),
             )
-            .add_systems(OnExit(AppState::Result), cleanup_screen::<ResultScreen>);
+            .add_systems(OnExit(AppState::Result), cleanup_screen::<ResultScreen>)
+            .add_systems(OnEnter(AppState::StageClear), setup_stage_clear)
+            .add_systems(OnEnter(AppState::StageFailed), setup_stage_failed)
+            .add_systems(
+                Update,
+                stage_clear_auto_advance
+                    .run_if(in_state(AppState::StageClear).or(in_state(AppState::StageFailed))),
+            );
     }
 }

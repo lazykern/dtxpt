@@ -5,3 +5,4 @@ pub mod menu_background;
 pub mod plugin;
 pub mod result;
 pub mod song_select;
+pub mod stage_clear;

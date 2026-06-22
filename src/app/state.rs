@@ -7,6 +7,15 @@ pub enum AppState {
     SongSelect,
     LoadingSong,
     Playing,
+    /// Interstitial screen between gameplay and Result, showing a
+    /// Stage Clear! / Stage Failed! banner and playing the
+    /// corresponding SFX. Auto-advances to `Result` after a short
+    /// delay. Skipped when `bSTAGEFAILEDEnabled` is off and the player
+    /// cleared, or when no SFX is configured.
+    /// BocuD ref: `CActPerformanceStageClear` /
+    /// `CActPerformanceStageFailed` (`references/DTXmaniaNX-BocuD/DTXMania/Stage/06.Performance/`).
+    StageClear,
+    StageFailed,
     Result,
 }
 

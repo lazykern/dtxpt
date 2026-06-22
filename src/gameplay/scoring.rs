@@ -246,8 +246,21 @@ pub(crate) fn finish_to_result(
     {
         warn!("failed to save score.ini: {err}");
     }
-    commands.insert_resource(result);
-    next_state.set(AppState::Result);
+    commands.insert_resource(result.clone());
+    // Route through StageClear / StageFailed interstitial when the
+    // run produced a clear or fail event. dtxpt's first pass landed
+    // without dedicated screens — this commit introduces the states
+    // and dispatches to them when appropriate. The dedicated screens
+    // themselves are intentionally minimal: a banner + SFX trigger
+    // with a short auto-advance to Result. Visual polish (BocuD-style
+    // animation strips, audience cheers) is a follow-up pass.
+    if result.failed {
+        next_state.set(AppState::StageFailed);
+    } else if result.cleared {
+        next_state.set(AppState::StageClear);
+    } else {
+        next_state.set(AppState::Result);
+    }
 }
 
 #[cfg(test)]

@@ -117,6 +117,9 @@ pub(crate) struct LoadingScreen;
 pub(crate) struct ResultScreen;
 
 #[derive(Component)]
+pub struct StageScreen;
+
+#[derive(Component)]
 pub(crate) struct SettingsOverlayScreen;
 
 #[derive(Component)]
