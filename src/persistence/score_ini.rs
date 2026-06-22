@@ -53,6 +53,16 @@ pub struct PerChartScore {
     pub hit_sound_priority_cy: HitSoundPriority,
     pub cleared: bool,
     pub rank: String,
+    /// Per-instrument best ranks from BocuD `[File]` section. BocuD
+    /// writes three fields — `BestRankDrums` (also surfaced as `rank`
+    /// above), `BestRankGuitar`, `BestRankBass`. We carry the other two
+    /// here so the result screen can show all three panels.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs` `[File]`
+    /// section.)
+    #[serde(default)]
+    pub rank_guitar: String,
+    #[serde(default)]
+    pub rank_bass: String,
 }
 
 impl PerChartScore {
@@ -88,6 +98,8 @@ impl PerChartScore {
             hit_sound_priority_cy: result.hit_sound_priority_cy,
             cleared: result.cleared,
             rank: result.rank.clone(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         }
     }
 
@@ -110,6 +122,9 @@ impl PerChartScore {
             miss: self.miss,
             history: self.history.clone(),
             rank: self.rank.clone(),
+            rank_drums: self.rank.clone(),
+            rank_guitar: self.rank_guitar.clone(),
+            rank_bass: self.rank_bass.clone(),
         }
     }
 }
@@ -267,6 +282,20 @@ fn parse_score_ini_section(
             .and_then(|file| file.get("BestRankDrums"))
             .map(|rank| rank_name(rank.parse::<i32>().unwrap_or(99)).to_string())
             .unwrap_or_else(|| "UNKNOWN".into()),
+        rank_guitar: file
+            .and_then(|file| file.get("BestRankGuitar"))
+            .and_then(|raw| raw.parse::<i32>().ok())
+            .filter(|&v| (0..=6).contains(&v))
+            .map(rank_name)
+            .unwrap_or("")
+            .to_string(),
+        rank_bass: file
+            .and_then(|file| file.get("BestRankBass"))
+            .and_then(|raw| raw.parse::<i32>().ok())
+            .filter(|&v| (0..=6).contains(&v))
+            .map(rank_name)
+            .unwrap_or("")
+            .to_string(),
     };
     if score.section_hash.is_empty() {
         score.section_hash = compute_performance_section_md5(&score, &score.date_time);
@@ -416,6 +445,8 @@ fn render_empty_score_section(text: &mut String, section: &str) {
             hit_sound_priority_cy: HitSoundPriority::ChipOverPad,
             cleared: false,
             rank: "UNKNOWN".into(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         },
     );
 }
@@ -653,6 +684,8 @@ mod tests {
             hit_sound_priority_cy: HitSoundPriority::PadOverChip,
             cleared: true,
             rank: "S".into(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         };
         score.section_hash = compute_performance_section_md5(&score, &score.date_time);
         let parsed = parse_score_ini(&render_score_ini(&score)).unwrap();
@@ -743,6 +776,8 @@ mod tests {
             hit_sound_priority_cy: HitSoundPriority::ChipOverPad,
             cleared: true,
             rank: "SS".into(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         };
         let text = render_score_ini(&score);
         assert!(text.contains("PrimaryPerfectRange=34"));
@@ -788,6 +823,8 @@ mod tests {
             hit_sound_priority_cy: HitSoundPriority::ChipOverPad,
             cleared: true,
             rank: "SS".into(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         };
         score.section_hash = compute_performance_section_md5(&score, &score.date_time);
         let text = render_score_ini(&score);

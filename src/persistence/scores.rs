@@ -26,8 +26,19 @@ pub struct BestScore {
     pub miss: u32,
     #[serde(default)]
     pub history: [String; 5],
+    /// Single-instrument best rank (typically the drums rank, since
+    /// dtxpt's first-pass runs defaulted to drum score persistence).
+    /// Kept for backward-compat with v1 `scores.ron` files.
     #[serde(default)]
     pub rank: String,
+    /// Per-instrument best ranks from BocuD `[File]` section. Newer
+    /// `score.ini` codec writes these alongside the legacy `rank`.
+    #[serde(default)]
+    pub rank_drums: String,
+    #[serde(default)]
+    pub rank_guitar: String,
+    #[serde(default)]
+    pub rank_bass: String,
 }
 
 impl ScoreStore {
@@ -38,6 +49,13 @@ impl ScoreStore {
 }
 
 impl BestScore {
+    pub fn instrument_ranks(&self) -> [(&'static str, &str); 3] {
+        [
+            ("Drums", self.rank_drums.as_str()),
+            ("Guitar", self.rank_guitar.as_str()),
+            ("Bass", self.rank_bass.as_str()),
+        ]
+    }
     pub fn from_result(result: &RunResult) -> Self {
         Self {
             score: result.score,
@@ -50,6 +68,9 @@ impl BestScore {
             miss: result.miss,
             history: Default::default(),
             rank: result.rank.clone(),
+            rank_drums: result.rank.clone(),
+            rank_guitar: String::new(),
+            rank_bass: String::new(),
         }
     }
 
@@ -87,4 +108,32 @@ pub fn save_score_store(store: &ScoreStore) -> Result<()> {
     let text = ron::ser::to_string_pretty(store, ron::ser::PrettyConfig::default())?;
     std::fs::write(path, text)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instrument_ranks_returns_per_instrument_labels() {
+        let score = BestScore {
+            score: 0,
+            accuracy: 0.0,
+            max_combo: 0,
+            perfect: 0,
+            great: 0,
+            good: 0,
+            poor: 0,
+            miss: 0,
+            history: Default::default(),
+            rank: "S".into(),
+            rank_drums: "SS".into(),
+            rank_guitar: "A".into(),
+            rank_bass: String::new(),
+        };
+        let ranks = score.instrument_ranks();
+        assert_eq!(ranks[0], ("Drums", "SS"));
+        assert_eq!(ranks[1], ("Guitar", "A"));
+        assert_eq!(ranks[2], ("Bass", ""));
+    }
 }

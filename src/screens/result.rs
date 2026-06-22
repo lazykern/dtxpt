@@ -27,11 +27,15 @@ pub fn setup_result(
         best_line,
         judgements,
         combo_flags,
+        instrument_ranks,
     ) = if let Some(result) = result {
         let best = scores.scores.get(&result.chart_path);
         let best_line = best
             .map(|best| format!("{:07}  {:.2}%", best.score, best.accuracy))
             .unwrap_or_else(|| "none".to_string());
+        let instrument_ranks = best
+            .map(|best| best.instrument_ranks())
+            .unwrap_or_default();
         let clear_line = if result.failed {
             "FAILED".to_string()
         } else if result.practice {
@@ -71,6 +75,7 @@ pub fn setup_result(
                 result.miss,
             ),
             combo_flags,
+            instrument_ranks,
         )
     } else {
         (
@@ -85,6 +90,7 @@ pub fn setup_result(
             "none".into(),
             (0, 0, 0, 0, 0),
             String::new(),
+            <[(&'static str, &str); 3]>::default(),
         )
     };
 
@@ -159,6 +165,7 @@ pub fn setup_result(
                         stat_row_bundle(&fonts, "Max Combo", &max_combo),
                         stat_row_bundle(&fonts, "Gauge", &gauge),
                         stat_row_bundle(&fonts, "Best", &best_line),
+                        per_instrument_ranks_bundle(&fonts, instrument_ranks),
                         (
                             Node {
                                 width: percent(100),
@@ -248,4 +255,68 @@ pub(crate) fn result_input(
     {
         next_state.set(AppState::SongSelect);
     }
+}
+
+/// Render the per-instrument best-rank row. Each instrument shows its
+/// rank label, or "—" when the player has never played the chart on
+/// that instrument.
+fn per_instrument_ranks_bundle(
+    fonts: &UiFonts,
+    ranks: [(&'static str, &str); 3],
+) -> impl Bundle {
+    let any = ranks.iter().any(|(_, r)| !r.is_empty());
+    let d0 = if ranks[0].1.is_empty() { "—" } else { ranks[0].1 };
+    let d1 = if ranks[1].1.is_empty() { "—" } else { ranks[1].1 };
+    let d2 = if ranks[2].1.is_empty() { "—" } else { ranks[2].1 };
+    (
+        Node {
+            width: percent(100),
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::Wrap,
+            column_gap: px(SPACING_LG),
+            row_gap: px(SPACING_SM),
+            align_items: AlignItems::Center,
+            display: if any { Display::Flex } else { Display::None },
+            ..default()
+        },
+        children![
+            caption_bundle(fonts, "Best ranks:", TEXT_SECONDARY),
+            (
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(SPACING_XS),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                children![
+                    caption_bundle(fonts, ranks[0].0, TEXT_SECONDARY),
+                    caption_bundle(fonts, d0, TEXT_ACCENT),
+                ],
+            ),
+            (
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(SPACING_XS),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                children![
+                    caption_bundle(fonts, ranks[1].0, TEXT_SECONDARY),
+                    caption_bundle(fonts, d1, TEXT_ACCENT),
+                ],
+            ),
+            (
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: px(SPACING_XS),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                children![
+                    caption_bundle(fonts, ranks[2].0, TEXT_SECONDARY),
+                    caption_bundle(fonts, d2, TEXT_ACCENT),
+                ],
+            ),
+        ],
+    )
 }
