@@ -56,6 +56,7 @@ fn scan_root(root: &Path, seen: &mut HashSet<PathBuf>, entries: &mut Vec<SongEnt
 
         let mut loose_dtx = Vec::new();
         let mut set_def = None;
+        let mut box_def = None;
         for entry in read_dir.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -69,8 +70,15 @@ fn scan_root(root: &Path, seen: &mut HashSet<PathBuf>, entries: &mut Vec<SongEnt
                 .file_name()
                 .map(|name| name.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
+            // `set.def` declares one SongEntry whose charts are the
+            // `L<n>FILE` entries. `box.def` uses the same format but
+            // appears alongside `set.def` to declare additional
+            // sub-boxes (each one becomes its own SongEntry).
+            // (`references/DTXmaniaNX-BocuD/DTXMania/SongDb/CDTXBoxDef.cs`.)
             if name == "set.def" {
                 set_def = Some(path);
+            } else if name == "box.def" {
+                box_def = Some(path);
             } else if path
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("dtx"))
@@ -83,7 +91,16 @@ fn scan_root(root: &Path, seen: &mut HashSet<PathBuf>, entries: &mut Vec<SongEnt
             && let Ok(entry) = set_def_entry(&set_def, root, seen)
         {
             entries.push(entry);
-            continue;
+        }
+
+        // `box.def` may declare multiple sub-boxes via repeated
+        // `L<n>LABEL` / `L<n>FILE` lines; each becomes its own
+        // SongEntry. We parse the file format directly here so we can
+        // emit one entry per L<n> row.
+        if let Some(box_def) = box_def
+            && let Ok(box_entries) = box_def_entries(&box_def, root, seen)
+        {
+            entries.extend(box_entries);
         }
 
         for path in loose_dtx {
@@ -181,6 +198,103 @@ fn set_def_entry(path: &Path, root: &Path, seen: &mut HashSet<PathBuf>) -> Resul
         folder,
         charts,
     })
+}
+
+/// Parse a `box.def` and produce one `SongEntry` per `L<n>FILE` row.
+/// Each row's `FILE` may point to a subdir containing its own
+/// `set.def` / `box.def` (sub-box recursion); if the path is a
+/// directory, we descend and pull the sub-box's charts into a single
+/// `SongEntry`. Mirrors BocuD's per-`L<n>FILE` sub-box handling in
+/// `CDTXBoxDef`.
+fn box_def_entries(
+    path: &Path,
+    _root: &Path,
+    seen: &mut HashSet<PathBuf>,
+) -> Result<Vec<SongEntry>> {
+    let text = read_text(path)?;
+    let folder = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let mut labels = std::collections::HashMap::<usize, String>::new();
+    let mut files = std::collections::HashMap::<usize, String>::new();
+    for raw in text.lines() {
+        let Some((command, value)) = parse_directive(raw) else {
+            continue;
+        };
+        if let Some(index) = command_index(&command, "L", "LABEL") {
+            labels.insert(index, value.to_string());
+        } else if let Some(index) = command_index(&command, "L", "FILE") {
+            files.insert(index, value.to_string());
+        }
+    }
+    let mut entries = Vec::new();
+    for (index, file) in files {
+        let target = folder.join(&file);
+        if !target.exists() {
+            continue;
+        }
+        if target.is_dir() {
+            // Sub-box recursion: descend into the subdir and pull
+            // its DTX charts into a single SongEntry.
+            let sub_set = target.join("set.def");
+            let sub_charts: Vec<ChartEntry> = if sub_set.exists() {
+                let sub_text = read_text(&sub_set).unwrap_or_default();
+                let sub_folder = target.clone();
+                let mut sub_labels = std::collections::HashMap::<usize, String>::new();
+                let mut sub_files = std::collections::HashMap::<usize, String>::new();
+                for raw in sub_text.lines() {
+                    let Some((command, value)) = parse_directive(raw) else {
+                        continue;
+                    };
+                    if let Some(i) = command_index(&command, "L", "LABEL") {
+                        sub_labels.insert(i, value.to_string());
+                    } else if let Some(i) = command_index(&command, "L", "FILE") {
+                        sub_files.insert(i, value.to_string());
+                    }
+                }
+                sub_files
+                    .into_iter()
+                    .filter_map(|(i, f)| {
+                        let p = sub_folder.join(f);
+                        if !p.exists() || !seen.insert(normalize_path(&p)) {
+                            return None;
+                        }
+                        let md = read_dtx_metadata(&p).unwrap_or_default();
+                        Some(chart_entry_from_path(
+                            p,
+                            sub_labels
+                                .get(&i)
+                                .cloned()
+                                .unwrap_or_else(|| default_difficulty_label(i).to_string()),
+                            md.level,
+                        ))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            if sub_charts.is_empty() {
+                continue;
+            }
+            let label = labels
+                .get(&index)
+                .cloned()
+                .unwrap_or_else(|| default_difficulty_label(index).to_string());
+            let title = label.clone();
+            entries.push(SongEntry {
+                title,
+                artist: None,
+                folder: target,
+                box_path: vec![],
+                preview_audio: None,
+                preview_image: None,
+                background_video: None,
+                charts: sub_charts,
+            });
+        }
+    }
+    Ok(entries)
 }
 
 fn loose_dtx_entry(path: &Path, root: &Path) -> Result<SongEntry> {
