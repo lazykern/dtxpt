@@ -360,6 +360,10 @@ mod tests {
             result_image: dtxpt::chart::ResultMedia::default(),
             result_movie: dtxpt::chart::ResultMedia::default(),
             result_sound: dtxpt::chart::ResultMedia::default(),
+            vol_7f_to_64: false,
+            dtxv_play_speed: None,
+            midifile: None,
+            midinote: false,
         };
         let progress = progress_string(&chart);
         assert_eq!(progress.len(), 64);

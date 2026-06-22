@@ -154,7 +154,12 @@ pub fn parse_dtx_chart_with_compute_mode(
     let mut result_image: ResultMedia = ResultMedia::default();
     let mut result_movie: ResultMedia = ResultMedia::default();
     let mut result_sound: ResultMedia = ResultMedia::default();
+    let mut vol_7f_to_64 = false;
+    let mut dtxv_play_speed: Option<f32> = None;
+    let mut midifile: Option<String> = None;
+    let mut midinote = false;
     let mut wav_volumes: HashMap<u32, i32> = HashMap::new();
+    let mut wav_sizes: HashMap<u32, i32> = HashMap::new();
     let mut wav_pans: HashMap<u32, i32> = HashMap::new();
     let mut bgm_wav = None;
     let mut events = Vec::new();
@@ -205,8 +210,52 @@ pub fn parse_dtx_chart_with_compute_mode(
                     volume: *wav_volumes.get(&id).unwrap_or(&100),
                     pan: *wav_pans.get(&id).unwrap_or(&0),
                     role: WavRole::Drum,
+                    chip_size: *wav_sizes.get(&id).unwrap_or(&-1),
                 });
             }
+            continue;
+        }
+        if command.len() >= 5 && command.len() <= 6 && command[..4].eq_ignore_ascii_case("SIZE")
+        {
+            // `#SIZExx <size>` — sets chip size (0..100) for WAV `xx`.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:6542`.)
+            if let Ok(id) = base36_str(&command[4..])
+                && let Ok(size) = value.trim().parse::<i32>()
+            {
+                let size = size.clamp(0, 100);
+                wav_sizes.insert(id, size);
+                for wav in wav_files.iter_mut().filter(|w| w.id == id) {
+                    wav.chip_size = size;
+                }
+            }
+            continue;
+        }
+        if command.eq_ignore_ascii_case("VOL7FTO64") {
+            // `#VOL7FTO64 on|off` — legacy volume range flag.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4820`.)
+            vol_7f_to_64 = value.trim().eq_ignore_ascii_case("on");
+            continue;
+        }
+        if command.eq_ignore_ascii_case("DTXVPLAYSPEED") {
+            // `#DTXVPLAYSPEED <float>` — DTXViewer play-speed multiplier.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4821`.)
+            if let Ok(v) = value.trim().parse::<f32>()
+                && v > 0.0
+            {
+                dtxv_play_speed = Some(v);
+            }
+            continue;
+        }
+        if command.len() >= 8 && command[..8].eq_ignore_ascii_case("MIDIFILE") {
+            // `#MIDIFILE <filename>`.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4978`.)
+            midifile = Some(value.to_string());
+            continue;
+        }
+        if command.eq_ignore_ascii_case("MIDINOTE") {
+            // `#MIDINOTE on|off` — flag for MIDI-note timing.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4990`.)
+            midinote = value.trim().eq_ignore_ascii_case("on");
             continue;
         }
         if command.len() == 5 && command[..3].eq_ignore_ascii_case("BMP") {
@@ -753,6 +802,10 @@ pub fn parse_dtx_chart_with_compute_mode(
             result_image,
             result_movie,
             result_sound,
+            vol_7f_to_64,
+            dtxv_play_speed,
+            midifile,
+            midinote,
         },
         timing,
     ))
@@ -1195,6 +1248,69 @@ mod tests {
             assert_eq!(chart.bga_events[0].layer, expected_layer);
             assert!(chart.bga_events[0].swap);
         }
+    }
+
+    #[test]
+    fn size_directive_sets_chip_size_clamped() {
+        let text = "\
+#TITLE: size\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#SIZE01 75\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "size.dtx", ".").unwrap();
+        let wav1 = chart.wav_info.iter().find(|w| w.id == 1).unwrap();
+        assert_eq!(wav1.chip_size, 75);
+        // And a separate test for the >100 clamp. SIZE without a
+        // matching WAV does not panic; the clamp applies at parse time.
+        let text = "\
+#TITLE: size clamp\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#SIZE01 200\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "size_clamp.dtx", ".").unwrap();
+        let wav1 = chart.wav_info.iter().find(|w| w.id == 1).unwrap();
+        // Values > 100 are clamped to 100 per BocuD CDTX.cs:6584.
+        assert_eq!(wav1.chip_size, 100);
+    }
+
+    #[test]
+    fn vol7fto64_directive_sets_chart_flag() {
+        let text = "\
+#TITLE: vol7f\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#VOL7FTO64 on\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "vol7f.dtx", ".").unwrap();
+        assert!(chart.vol_7f_to_64);
+    }
+
+    #[test]
+    fn dtxvplayspeed_directive_sets_speed() {
+        let text = "\
+#TITLE: dtxvplayspeed\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#DTXVPLAYSPEED 1.5\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "dtxvplayspeed.dtx", ".").unwrap();
+        assert_eq!(chart.dtxv_play_speed, Some(1.5));
+    }
+
+    #[test]
+    fn midifile_and_midinote_directives() {
+        let text = "\
+#TITLE: midi\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#MIDIFILE chart.mid\n\
+#MIDINOTE on\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "midi.dtx", ".").unwrap();
+        assert_eq!(chart.midifile.as_deref(), Some("chart.mid"));
+        assert!(chart.midinote);
     }
 
     #[test]

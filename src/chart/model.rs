@@ -75,6 +75,23 @@ pub struct Chart {
     /// `#RESULTSOUND` directive values.
     /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1105`.)
     pub result_sound: ResultMedia,
+    /// `#VOL7FTO64` directive value — when `true`, volume values > 100
+    /// are accepted (legacy DTX format that mapped 0..127 to 0..100
+    /// via a non-linear curve).
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4820`.)
+    pub vol_7f_to_64: bool,
+    /// `#DTXVPLAYSPEED <float>` — DTXViewer-original playback speed
+    /// multiplier (1.0 = normal). Optional.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4821`.)
+    pub dtxv_play_speed: Option<f32>,
+    /// `#MIDIFILE <filename>` — optional MIDI file referenced by the
+    /// chart for MIDI-mode playback.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4978`.)
+    pub midifile: Option<String>,
+    /// `#MIDINOTE` flag — when `true`, the chart uses the MIDIFILE's
+    /// note events for note timing instead of chip numbers.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:4990`.)
+    pub midinote: bool,
 }
 
 /// Per-rank media file mapping for a single directive family. Mirrors
@@ -163,6 +180,10 @@ impl Default for Chart {
             result_image: ResultMedia::default(),
             result_movie: ResultMedia::default(),
             result_sound: ResultMedia::default(),
+            vol_7f_to_64: false,
+            dtxv_play_speed: None,
+            midifile: None,
+            midinote: false,
         }
     }
 }
@@ -317,6 +338,10 @@ pub struct WavInfo {
     pub volume: i32,
     pub pan: i32,
     pub role: WavRole,
+    /// Chip size (0-100), set by `#SIZExx <size>`. `-1` means unset
+    /// (BocuD's `n無限管理SIZE` sentinel value).
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:6542`.)
+    pub chip_size: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -683,6 +708,10 @@ mod tests {
             result_image: ResultMedia::default(),
             result_movie: ResultMedia::default(),
             result_sound: ResultMedia::default(),
+            vol_7f_to_64: false,
+            dtxv_play_speed: None,
+            midifile: None,
+            midinote: false,
         };
         let bgm_time = chart_bgm_start_time(&chart);
         let stick_se_times = [2.0];
