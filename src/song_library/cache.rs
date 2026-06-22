@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::model::{ChartEntry, SongEntry, SongLibrary};
+use super::model::{ChartEntry, SongEntry, SongLibrary, SongSortMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LibraryCache {
@@ -129,6 +129,7 @@ fn library_from_cache(cache: LibraryCache) -> SongLibrary {
         selected_entry: 0,
         selected_chart: 0,
         search: String::new(),
+        sort_mode: SongSortMode::Title,
     }
 }
 

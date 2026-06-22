@@ -10,6 +10,33 @@ pub struct SongLibrary {
     pub selected_entry: usize,
     pub selected_chart: usize,
     pub search: String,
+    pub sort_mode: SongSortMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SongSortMode {
+    #[default]
+    Title,
+    Artist,
+    LevelDesc,
+}
+
+impl SongSortMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Title => Self::Artist,
+            Self::Artist => Self::LevelDesc,
+            Self::LevelDesc => Self::Title,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Artist => "Artist",
+            Self::LevelDesc => "Level ↓",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +113,8 @@ impl SongLibrary {
 
     pub fn visible_indices(&self) -> Vec<usize> {
         let search = self.search.trim().to_ascii_lowercase();
-        self.entries
+        let mut indices = self
+            .entries
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
@@ -96,7 +124,40 @@ impl SongLibrary {
                     None
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        self.sort_indices(&mut indices);
+        indices
+    }
+
+    fn sort_indices(&self, indices: &mut [usize]) {
+        indices.sort_by(|a, b| {
+            let left = &self.entries[*a];
+            let right = &self.entries[*b];
+            match self.sort_mode {
+                SongSortMode::Title => left
+                    .title
+                    .to_ascii_lowercase()
+                    .cmp(&right.title.to_ascii_lowercase()),
+                SongSortMode::Artist => left
+                    .artist
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+                    .cmp(&right.artist.as_deref().unwrap_or("").to_ascii_lowercase())
+                    .then_with(|| {
+                        left.title
+                            .to_ascii_lowercase()
+                            .cmp(&right.title.to_ascii_lowercase())
+                    }),
+                SongSortMode::LevelDesc => best_level(right)
+                    .total_cmp(&best_level(left))
+                    .then_with(|| {
+                        left.title
+                            .to_ascii_lowercase()
+                            .cmp(&right.title.to_ascii_lowercase())
+                    }),
+            }
+        });
     }
 
     pub fn selected_visible_index(&self) -> usize {
@@ -153,11 +214,29 @@ impl SongLibrary {
     }
 
     pub fn select_random(&mut self, index: usize, preferred: &str) {
-        let visible = self.visible_indices();
-        if visible.is_empty() {
+        self.select_random_with_sub_box(index, preferred, true);
+    }
+
+    pub fn select_random_with_sub_box(
+        &mut self,
+        index: usize,
+        preferred: &str,
+        descend_sub_boxes: bool,
+    ) {
+        let mut candidates = self.visible_indices();
+        if !descend_sub_boxes
+            && let Some(current_box) = self.current_entry().map(|entry| entry.box_path.clone())
+        {
+            candidates.retain(|candidate| {
+                self.entries
+                    .get(*candidate)
+                    .is_some_and(|entry| entry.box_path == current_box)
+            });
+        }
+        if candidates.is_empty() {
             return;
         }
-        self.selected_entry = visible[index % visible.len()];
+        self.selected_entry = candidates[index % candidates.len()];
         self.apply_preferred_difficulty(preferred);
     }
 
@@ -173,5 +252,76 @@ impl SongLibrary {
         self.current_entry()
             .map(|entry| entry.charts.len().saturating_sub(1))
             .unwrap_or(0)
+    }
+}
+
+fn best_level(entry: &SongEntry) -> f32 {
+    entry
+        .charts
+        .iter()
+        .filter_map(|chart| chart.level)
+        .max_by(f32::total_cmp)
+        .unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chart(label: &str, level: f32) -> ChartEntry {
+        ChartEntry {
+            path: PathBuf::from(format!("{label}.dtx")),
+            label: label.into(),
+            level: Some(level),
+            bgm_path: None,
+            bgm_volume: 100,
+        }
+    }
+
+    fn entry(title: &str, artist: &str, box_path: &[&str], level: f32) -> SongEntry {
+        SongEntry {
+            title: title.into(),
+            artist: Some(artist.into()),
+            folder: PathBuf::from(title),
+            box_path: box_path.iter().map(|item| item.to_string()).collect(),
+            preview_audio: None,
+            preview_image: None,
+            background_video: None,
+            charts: vec![chart("EXT", level)],
+        }
+    }
+
+    fn library() -> SongLibrary {
+        SongLibrary {
+            entries: vec![
+                entry("Beta", "Zed", &["Pack", "Sub"], 5.0),
+                entry("Alpha", "Ann", &["Pack"], 9.0),
+                entry("Gamma", "Moe", &["Pack", "Sub"], 7.0),
+            ],
+            selected_entry: 0,
+            selected_chart: 0,
+            search: String::new(),
+            sort_mode: SongSortMode::Title,
+        }
+    }
+
+    #[test]
+    fn visible_indices_follow_sort_mode() {
+        let mut library = library();
+        assert_eq!(library.visible_indices(), vec![1, 0, 2]);
+
+        library.sort_mode = SongSortMode::LevelDesc;
+        assert_eq!(library.visible_indices(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn random_select_can_stay_within_current_sub_box() {
+        let mut library = library();
+        library.selected_entry = 0;
+        library.select_random_with_sub_box(1, "", false);
+        assert_eq!(library.selected_entry, 2);
+
+        library.select_random_with_sub_box(0, "", true);
+        assert_eq!(library.selected_entry, 1);
     }
 }

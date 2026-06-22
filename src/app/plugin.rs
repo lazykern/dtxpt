@@ -7,7 +7,7 @@ use bevy_kira_audio::prelude::*;
 use dtxpt::input::{InputBindings, midi};
 use dtxpt::song_library;
 
-use crate::app::state::{AppState, OverlayState, PauseState};
+use crate::app::state::{OverlayState, PauseState, initial_app_state};
 use crate::audio::AudioFrame;
 use crate::audio::{ActiveSounds, AudioMix, GameRng, MetronomeActive};
 use crate::audio::{MenuBgmCache, MenuMusicState, MenuMusicTrack};
@@ -37,6 +37,7 @@ impl Plugin for DtxptPlugin {
         let input_bindings = InputBindings::from_config(&config.bindings);
         let audio_mix = AudioMix::from_config(&config);
         let fps_cap = config.fps_cap;
+        let initial_app_state = initial_app_state(config.compact_mode);
         let score_store = load_score_store();
         let chart_path = initial_chart_path(&config);
         let (mut song_library, song_scan) =
@@ -108,9 +109,10 @@ impl Plugin for DtxptPlugin {
                 AudioPlugin,
             ))
             .add_audio_channel::<MenuMusicTrack>()
-            .init_state::<AppState>()
+            .insert_state(initial_app_state)
             .init_state::<OverlayState>()
-            .init_state::<PauseState>();
+            .init_state::<PauseState>()
+            .add_sub_state::<crate::app::state::PerfPart>();
 
         midi::plugin(app);
         app.add_plugins((

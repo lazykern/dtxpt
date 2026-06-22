@@ -131,7 +131,12 @@ pub(crate) fn collect_immediate_wav_ids(chart: &Chart) -> std::collections::Hash
         .notes
         .iter()
         .filter_map(|note| note.wav_id)
-        .chain(chart.empty_hit_events.iter().filter_map(|event| event.wav_id))
+        .chain(
+            chart
+                .empty_hit_events
+                .iter()
+                .filter_map(|event| event.wav_id),
+        )
         .collect()
 }
 

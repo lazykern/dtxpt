@@ -80,6 +80,7 @@ pub fn spawn_hit_burst(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_metronome_lines(
     mut commands: Commands,
     chart: Res<Chart>,
@@ -127,6 +128,7 @@ pub(crate) fn update_metronome_lines(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_note_visuals(
     mut commands: Commands,
     chart: Res<Chart>,

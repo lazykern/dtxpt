@@ -31,3 +31,36 @@ pub fn is_paused(pause: &PauseState) -> bool {
 pub fn overlay_closed(overlay: Res<State<OverlayState>>) -> bool {
     *overlay.get() == OverlayState::None
 }
+
+pub fn initial_app_state(compact_mode: bool) -> AppState {
+    if compact_mode {
+        AppState::SongSelect
+    } else {
+        AppState::MainMenu
+    }
+}
+
+/// Per-instrument gameplay axis. Derived from `AppState::Playing` so
+/// it only exists during gameplay. Used to route per-instrument
+/// gameplay systems (Drum/Guitar/Bass) to the right slice of
+/// `Chart` (notes / guitar_notes / bass_notes). See
+/// `docs/plans/bocu-d-port-architecture.md` §B-4.
+#[derive(SubStates, Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[source(AppState = AppState::Playing)]
+pub enum PerfPart {
+    #[default]
+    Drums,
+    Guitar,
+    Bass,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_mode_starts_at_song_select() {
+        assert_eq!(initial_app_state(true), AppState::SongSelect);
+        assert_eq!(initial_app_state(false), AppState::MainMenu);
+    }
+}

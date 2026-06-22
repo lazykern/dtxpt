@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use super::keycodes::keycode_from_name;
 use super::types::{
-    BindingTarget, DrumLane, InputBinding, InputBindingConfig, InputSource, InputSourceConfig,
-    SystemAction,
+    BassLane, BindingInstrument, BindingTarget, DrumLane, GuitarLane, InputBinding,
+    InputBindingConfig, InputSource, InputSourceConfig, SystemAction,
 };
 use crate::input::midi::MidiNoteEvent;
 
@@ -40,13 +40,28 @@ impl InputBindings {
         Self { bindings }
     }
 
+    /// Iterate bindings targeting the given instrument. Used by per-instrument
+    /// gameplay plugins (drums / guitar / bass) to filter their view of the
+    /// shared `InputBindings` resource.
+    #[allow(private_interfaces)]
+    pub fn for_instrument(
+        &self,
+        instrument: BindingInstrument,
+    ) -> impl Iterator<Item = (&InputSource, &BindingTarget)> {
+        self.bindings
+            .iter()
+            .filter(move |b| b.target.instrument() == instrument)
+            .map(|b| (&b.source, &b.target))
+    }
+
     pub fn lane_triggered(
         &self,
         lane: usize,
         keyboard: &ButtonInput<KeyCode>,
         midi_events: &[MidiNoteEvent],
     ) -> bool {
-        self.lane_triggered_with_source(lane, keyboard, midi_events).is_some()
+        self.lane_triggered_with_source(lane, keyboard, midi_events)
+            .is_some()
     }
 
     /// Returns the first matching binding source for the lane, so callers can
@@ -128,6 +143,84 @@ impl InputBindings {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Returns the first matching binding source for the guitar lane, or `None`.
+    pub fn guitar_lane_triggered_with_source<'a>(
+        &'a self,
+        lane: GuitarLane,
+        keyboard: &ButtonInput<KeyCode>,
+        midi_events: &'a [MidiNoteEvent],
+    ) -> Option<LaneTriggerSource<'a>> {
+        for binding in &self.bindings {
+            if binding.target != BindingTarget::GuitarLane(lane) {
+                continue;
+            }
+            if let Some(source) = binding_source_triggered(&binding.source, keyboard, midi_events) {
+                return Some(source);
+            }
+        }
+        None
+    }
+
+    /// Returns the first matching binding source for the bass lane, or `None`.
+    pub fn bass_lane_triggered_with_source<'a>(
+        &'a self,
+        lane: BassLane,
+        keyboard: &ButtonInput<KeyCode>,
+        midi_events: &'a [MidiNoteEvent],
+    ) -> Option<LaneTriggerSource<'a>> {
+        for binding in &self.bindings {
+            if binding.target != BindingTarget::BassLane(lane) {
+                continue;
+            }
+            if let Some(source) = binding_source_triggered(&binding.source, keyboard, midi_events) {
+                return Some(source);
+            }
+        }
+        None
+    }
+
+    pub fn guitar_lane_triggered(
+        &self,
+        lane: GuitarLane,
+        keyboard: &ButtonInput<KeyCode>,
+        midi_events: &[MidiNoteEvent],
+    ) -> bool {
+        self.guitar_lane_triggered_with_source(lane, keyboard, midi_events)
+            .is_some()
+    }
+
+    pub fn bass_lane_triggered(
+        &self,
+        lane: BassLane,
+        keyboard: &ButtonInput<KeyCode>,
+        midi_events: &[MidiNoteEvent],
+    ) -> bool {
+        self.bass_lane_triggered_with_source(lane, keyboard, midi_events)
+            .is_some()
+    }
+}
+
+fn binding_source_triggered<'a>(
+    source: &InputSource,
+    keyboard: &ButtonInput<KeyCode>,
+    midi_events: &'a [MidiNoteEvent],
+) -> Option<LaneTriggerSource<'a>> {
+    match source {
+        InputSource::Keyboard(key) => keyboard
+            .just_pressed(*key)
+            .then_some(LaneTriggerSource::Keyboard),
+        InputSource::MidiNote {
+            device,
+            note,
+            channel,
+        } => midi_events.iter().find_map(|event| {
+            (device.matches(&event.device_name)
+                && event.note == *note
+                && channel.is_none_or(|expected| expected == event.channel))
+            .then_some(LaneTriggerSource::Midi { event })
+        }),
     }
 }
 

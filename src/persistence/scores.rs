@@ -24,6 +24,10 @@ pub struct BestScore {
     pub good: u32,
     pub poor: u32,
     pub miss: u32,
+    #[serde(default)]
+    pub history: [String; 5],
+    #[serde(default)]
+    pub rank: String,
 }
 
 impl ScoreStore {
@@ -44,6 +48,8 @@ impl BestScore {
             good: result.good,
             poor: result.poor,
             miss: result.miss,
+            history: Default::default(),
+            rank: result.rank.clone(),
         }
     }
 

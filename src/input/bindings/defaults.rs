@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use super::keycodes::keycode_from_name;
 use super::types::{
-    BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig, InputSourceConfig,
-    LANE_COUNT, MidiDeviceFilter, SystemAction,
+    BindingInstrument, BindingTarget, DEFAULT_LANE_KEY_NAMES, DrumLane, InputBindingConfig,
+    InputSourceConfig, LANE_COUNT, MidiDeviceFilter, SystemAction,
 };
 use crate::input::lanes::{
     LANE_BD, LANE_CY, LANE_FT, LANE_HH, LANE_HT, LANE_LC, LANE_LP, LANE_LT, LANE_RD, LANE_SD,
@@ -22,6 +22,7 @@ pub fn default_input_bindings() -> Vec<InputBindingConfig> {
 
     for (lane, name) in DEFAULT_LANE_KEY_NAMES.iter().enumerate() {
         bindings.push(InputBindingConfig {
+            instrument: BindingInstrument::Drums,
             source: InputSourceConfig::Keyboard {
                 key: name.to_string(),
             },
@@ -31,6 +32,7 @@ pub fn default_input_bindings() -> Vec<InputBindingConfig> {
 
     for (note, lane) in default_midi_lane_notes() {
         bindings.push(InputBindingConfig {
+            instrument: BindingInstrument::Drums,
             source: InputSourceConfig::MidiNote {
                 device: MidiDeviceFilter::Any,
                 note,
@@ -52,6 +54,7 @@ pub fn default_input_bindings_with_lane_keys(
         !matches!(
             binding,
             InputBindingConfig {
+                instrument: BindingInstrument::Drums,
                 source: InputSourceConfig::Keyboard { .. },
                 target: BindingTarget::DrumLane(_),
             }
@@ -60,6 +63,7 @@ pub fn default_input_bindings_with_lane_keys(
 
     for (lane, key) in lane_keys.iter().enumerate() {
         bindings.push(InputBindingConfig {
+            instrument: BindingInstrument::Drums,
             source: InputSourceConfig::Keyboard { key: key.clone() },
             target: BindingTarget::DrumLane(DrumLane::from_index(lane).expect("valid lane")),
         });
@@ -102,6 +106,7 @@ pub(crate) fn default_system_bindings() -> Vec<InputBindingConfig> {
     ]
     .into_iter()
     .map(|(key, action)| InputBindingConfig {
+        instrument: BindingInstrument::Drums,
         source: InputSourceConfig::Keyboard {
             key: key.to_string(),
         },

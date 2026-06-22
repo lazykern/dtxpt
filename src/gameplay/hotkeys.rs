@@ -7,6 +7,7 @@ use dtxpt::input::{InputBindings, MidiInputState, SystemAction};
 use crate::config::GameConfig;
 use crate::gameplay::run::RunState;
 
+#[allow(clippy::too_many_arguments)]
 pub fn toggle_hotkeys(
     keyboard: Res<ButtonInput<KeyCode>>,
     midi: Res<MidiInputState>,

@@ -18,6 +18,9 @@ pub struct RunResult {
     pub chart_path: String,
     pub score: u32,
     pub accuracy: f32,
+    pub play_skill: f32,
+    pub game_skill: f32,
+    pub progress: String,
     pub max_combo: u32,
     pub perfect: u32,
     pub great: u32,
@@ -33,6 +36,18 @@ pub struct RunResult {
     /// Effective auto set used for this run. Snapshot of
     /// `RunState.active_mods.auto_lanes` at finish time.
     pub auto_lanes: BTreeSet<dtxpt::input::bindings::DrumLane>,
+    pub used_keyboard: bool,
+    pub used_midi_in: bool,
+    pub used_joypad: bool,
+    pub used_mouse: bool,
+    /// Play speed numerator (BocuD `nPlaySpeedNumerator`) at the time
+    /// the score was committed. Used for score.ini `PlaySpeed=N/D` field.
+    pub play_speed_num: u32,
+    /// Play speed denominator (BocuD `nPlaySpeedDenominator`).
+    pub play_speed_den: u32,
+    pub hit_sound_priority_hh: HitSoundPriority,
+    pub hit_sound_priority_ft: HitSoundPriority,
+    pub hit_sound_priority_cy: HitSoundPriority,
     pub rank: String,
 }
 
@@ -41,11 +56,15 @@ pub struct RunState {
     pub raw_elapsed: f32,
     pub elapsed: f32,
     pub timing_offset: f32,
+    pub guitar_offset: f32,
+    pub bass_offset: f32,
     pub lane_speed: f32,
     pub song_playback_rate: f32,
     pub metronome_sound: bool,
     pub lp_muting: bool,
     pub drum_hit_sound: bool,
+    pub pedal_lag_time_ms: i32,
+    pub cymbal_free: bool,
     pub hit_sound_priority_hh: HitSoundPriority,
     pub hit_sound_priority_ft: HitSoundPriority,
     pub hit_sound_priority_cy: HitSoundPriority,
@@ -79,6 +98,29 @@ pub struct RunState {
     /// via `resolve_auto_lanes`. In Normal mode this is read-only during
     /// play; in Practice it can be freely toggled.
     pub active_mods: ModSet,
+    pub used_keyboard: bool,
+    pub used_midi_in: bool,
+    pub used_joypad: bool,
+    pub used_mouse: bool,
+    /// Risky mode initial count. 0 = Risky off; 1..=10 = Risky N.
+    /// Snapshot of `GameConfig.gauge.risky_initial` at run start.
+    pub risky_initial: u8,
+    /// Risky mode remaining-misses counter. Decremented on every Miss;
+    /// reaching 0 fails the run (BocuD `IsFailed = risky ? risky_times <= 0 : ...`).
+    pub risky_times_remaining: u8,
+    /// Damage level multiplier for Poor/Miss deltas. Snapshot of
+    /// `GameConfig.gauge.damage_level` at run start.
+    pub damage_level: crate::config::DamageLevel,
+    /// Whether auto-played chips contribute positive gauge delta.
+    /// Snapshot of `GameConfig.gauge.auto_add_gauge` at run start.
+    pub auto_add_gauge: bool,
+    /// Play speed numerator (BocuD `nPlaySpeedNumerator`). Snapshot of
+    /// `GameConfig.play_speed_num` at run start. Used by score.ini codec
+    /// (`PlaySpeed=N/D` field).
+    pub play_speed_num: u32,
+    /// Play speed denominator (BocuD `nPlaySpeedDenominator`). Snapshot
+    /// of `GameConfig.play_speed_den` at run start.
+    pub play_speed_den: u32,
 }
 
 impl RunState {
@@ -90,6 +132,8 @@ impl RunState {
             raw_elapsed: -WARMUP_SECS,
             elapsed: -WARMUP_SECS,
             timing_offset: config.timing_offset,
+            guitar_offset: config.guitar_offset,
+            bass_offset: config.bass_offset,
             lane_speed: config.lane_speed.clamp(MIN_LANE_SPEED, MAX_LANE_SPEED),
             song_playback_rate: config
                 .song_playback_rate
@@ -97,6 +141,8 @@ impl RunState {
             metronome_sound: config.metronome_sound,
             lp_muting: config.lp_muting,
             drum_hit_sound: config.drum_hit_sound,
+            pedal_lag_time_ms: config.pedal_lag_time_ms,
+            cymbal_free: config.cymbal_free,
             hit_sound_priority_hh: config.hit_sound_priority_hh,
             hit_sound_priority_ft: config.hit_sound_priority_ft,
             hit_sound_priority_cy: config.hit_sound_priority_cy,
@@ -122,6 +168,16 @@ impl RunState {
             gauge: GAUGE_START,
             practice: config.practice_song_select,
             active_mods,
+            used_keyboard: false,
+            used_midi_in: false,
+            used_joypad: false,
+            used_mouse: false,
+            risky_initial: config.gauge.risky_initial,
+            risky_times_remaining: config.gauge.risky_initial,
+            damage_level: config.gauge.damage_level,
+            auto_add_gauge: config.gauge.auto_add_gauge,
+            play_speed_num: config.play_speed_num,
+            play_speed_den: config.play_speed_den,
         }
     }
 }

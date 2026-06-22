@@ -2,10 +2,11 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::input::lanes::{
-    LANE_BD, LANE_CY, LANE_FT, LANE_HH, LANE_HT, LANE_LC, LANE_LP, LANE_LT, LANE_RD, LANE_SD,
+    LANE_BD, LANE_CY, LANE_FT, LANE_HH, LANE_HT, LANE_LBD, LANE_LC, LANE_LP, LANE_LT, LANE_RD,
+    LANE_SD,
 };
 
-pub const LANE_COUNT: usize = 10;
+pub const LANE_COUNT: usize = 11;
 
 pub const DEFAULT_LANE_KEY_NAMES: [&str; LANE_COUNT] = [
     "KeyA",
@@ -18,6 +19,7 @@ pub const DEFAULT_LANE_KEY_NAMES: [&str; LANE_COUNT] = [
     "KeyJ",
     "KeyK",
     "Semicolon",
+    "KeyZ",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -32,6 +34,7 @@ pub enum DrumLane {
     Cy,
     Rd,
     Lc,
+    Lbd,
 }
 
 impl DrumLane {
@@ -46,6 +49,7 @@ impl DrumLane {
         Self::Cy,
         Self::Rd,
         Self::Lc,
+        Self::Lbd,
     ];
 
     pub fn index(self) -> usize {
@@ -60,6 +64,7 @@ impl DrumLane {
             Self::Cy => LANE_CY,
             Self::Rd => LANE_RD,
             Self::Lc => LANE_LC,
+            Self::Lbd => LANE_LBD,
         }
     }
 
@@ -75,8 +80,96 @@ impl DrumLane {
             LANE_CY => Self::Cy,
             LANE_RD => Self::Rd,
             LANE_LC => Self::Lc,
+            LANE_LBD => Self::Lbd,
             _ => return None,
         })
+    }
+}
+
+/// Per-binding instrument tag. Determines which instrument gameplay
+/// the binding applies to. Drum bindings stay default for legacy
+/// configs (v13 and earlier did not have this field).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BindingInstrument {
+    #[default]
+    Drums,
+    Guitar,
+    Bass,
+}
+
+impl BindingInstrument {
+    pub const ALL: [Self; 3] = [Self::Drums, Self::Guitar, Self::Bass];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Drums => "Drums",
+            Self::Guitar => "Guitar",
+            Self::Bass => "Bass",
+        }
+    }
+}
+
+/// Guitar lanes per BocuD `EChannel` (5 visible lanes + open + control).
+/// Channels 0x20..0x27, 0x31..0x38, 0x93..0x9A, 0x9B..0xA2, 0x28..0x2C,
+/// 0x2C=44 (long note), 0xBA (NoChip), 0xC0.. (NoChip variants).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum GuitarLane {
+    Open,
+    R,
+    G,
+    B,
+    Y,
+    P,
+    Pick,
+    Decide,
+    Wail,
+}
+
+impl GuitarLane {
+    pub const VISIBLE_LANES: [Self; 5] = [Self::R, Self::G, Self::B, Self::Y, Self::P];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::R => "R",
+            Self::G => "G",
+            Self::B => "B",
+            Self::Y => "Y",
+            Self::P => "P",
+            Self::Pick => "Pick",
+            Self::Decide => "Decide",
+            Self::Wail => "Wail",
+        }
+    }
+}
+
+/// Bass lanes per BocuD `EChannel` (4 visible lanes + open + control).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum BassLane {
+    Open,
+    R,
+    G,
+    B,
+    P,
+    Pick,
+    Decide,
+    Wail,
+}
+
+impl BassLane {
+    pub const VISIBLE_LANES: [Self; 4] = [Self::R, Self::G, Self::B, Self::P];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::R => "R",
+            Self::G => "G",
+            Self::B => "B",
+            Self::P => "P",
+            Self::Pick => "Pick",
+            Self::Decide => "Decide",
+            Self::Wail => "Wail",
+        }
     }
 }
 
@@ -242,13 +335,46 @@ pub enum InputSourceConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BindingTarget {
     DrumLane(DrumLane),
+    GuitarLane(GuitarLane),
+    BassLane(BassLane),
     System(SystemAction),
+}
+
+impl BindingTarget {
+    /// Instrument this binding target belongs to. Used to route bindings
+    /// to the right per-instrument resource at load time.
+    pub fn instrument(&self) -> BindingInstrument {
+        match self {
+            Self::DrumLane(_) => BindingInstrument::Drums,
+            Self::GuitarLane(_) => BindingInstrument::Guitar,
+            Self::BassLane(_) => BindingInstrument::Bass,
+            Self::System(_) => BindingInstrument::Drums,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputBindingConfig {
+    /// Defaults to `Drums` for legacy configs that pre-date the per-instrument
+    /// refactor. Set automatically by the rebind UI when the user picks a
+    /// guitar or bass lane target.
+    #[serde(default)]
+    pub instrument: BindingInstrument,
     pub source: InputSourceConfig,
     pub target: BindingTarget,
+}
+
+impl InputBindingConfig {
+    /// Construct a binding with the instrument derived from the target.
+    /// Lane targets (drum/guitar/bass) get their matching instrument;
+    /// `System` targets fall back to `Drums` (legacy default).
+    pub fn new(source: InputSourceConfig, target: BindingTarget) -> Self {
+        Self {
+            instrument: target.instrument(),
+            source,
+            target,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

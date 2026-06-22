@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use crate::chart::dtx::{command_index, parse_directive, read_text, resolve_chart_bgm};
 
 use super::difficulty::compare_difficulty_labels;
-use super::model::{ChartEntry, SongEntry, SongLibrary};
+use super::model::{ChartEntry, SongEntry, SongLibrary, SongSortMode};
 
 #[derive(Debug, Clone, Default)]
 struct DtxMetadata {
@@ -36,13 +36,14 @@ pub fn scan_song_library(chart_root: &str) -> SongLibrary {
         scan_root(&root, &mut seen, &mut entries);
     }
 
-    entries.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    entries.sort_by_key(|entry| entry.title.to_lowercase());
 
     SongLibrary {
         entries,
         selected_entry: 0,
         selected_chart: 0,
         search: String::new(),
+        sort_mode: SongSortMode::Title,
     }
 }
 
@@ -227,6 +228,8 @@ fn loose_dtx_entry(path: &Path, root: &Path) -> Result<SongEntry> {
 fn read_dtx_metadata(path: &Path) -> Result<DtxMetadata> {
     let text = read_text(path)?;
     let mut metadata = DtxMetadata::default();
+    let mut level_raw: Option<(f32, bool)> = None;
+    let mut level_dec = 0_i32;
     for raw in text.lines() {
         let Some((command, value)) = parse_directive(raw) else {
             continue;
@@ -236,13 +239,13 @@ fn read_dtx_metadata(path: &Path) -> Result<DtxMetadata> {
         } else if command.eq_ignore_ascii_case("ARTIST") {
             metadata.artist = Some(value.to_string());
         } else if command.eq_ignore_ascii_case("DLEVEL") {
-            // DTXMania: integer DLEVEL = level * 10 (e.g., 85 = 8.5)
-            // Decimal notation (contains '.') used directly
-            metadata.level = if value.contains('.') {
-                value.parse::<f32>().ok()
-            } else {
-                value.parse::<f32>().ok().map(|v| v / 10.0)
-            };
+            if let Ok(parsed) = value.parse::<f32>() {
+                level_raw = Some((parsed, value.contains('.')));
+            }
+        } else if command.eq_ignore_ascii_case("DLVDEC") {
+            if let Ok(parsed) = value.parse::<i32>() {
+                level_dec = parsed;
+            }
         } else if command.eq_ignore_ascii_case("PREVIEW") {
             metadata.preview_audio = resolve_media_path(path, value);
         } else if command.eq_ignore_ascii_case("PREIMAGE") {
@@ -252,7 +255,19 @@ fn read_dtx_metadata(path: &Path) -> Result<DtxMetadata> {
             metadata.background_video = resolve_media_path(path, value);
         }
     }
+    metadata.level =
+        level_raw.map(|(level, decimal)| normalize_skill_level(level, decimal, level_dec));
     Ok(metadata)
+}
+
+fn normalize_skill_level(level: f32, decimal: bool, level_dec: i32) -> f32 {
+    if decimal {
+        level
+    } else if level >= 100.0 {
+        level / 100.0
+    } else {
+        level / 10.0 + level_dec as f32 / 100.0
+    }
 }
 
 fn read_box_metadata(path: &Path) -> Result<BoxMetadata> {

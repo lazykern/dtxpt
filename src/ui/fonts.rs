@@ -42,3 +42,18 @@ pub fn text_font(fonts: &UiFonts, size: f32) -> TextFont {
     }
     font
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cjk_font_candidates_include_japanese_capable_noto() {
+        assert!(
+            SYSTEM_UI_FONTS
+                .iter()
+                .any(|path| path.contains("NotoSansCJK")),
+            "Japanese metadata fallback should try a CJK-capable font before generic fonts"
+        );
+    }
+}

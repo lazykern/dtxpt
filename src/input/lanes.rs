@@ -10,6 +10,7 @@ pub const LANE_HT: usize = 6;
 pub const LANE_CY: usize = 7;
 pub const LANE_RD: usize = 8;
 pub const LANE_LC: usize = 9;
+pub const LANE_LBD: usize = 10;
 
 pub const DTX_CH_HH_CLOSE: u32 = 0x11;
 pub const DTX_CH_HH_OPEN: u32 = 0x18;
@@ -20,7 +21,7 @@ pub const POLYPHONIC_VOICES: usize = 4;
 pub const HH_TRACKED_WAV_CAP: usize = 16;
 
 /// Screen left-to-right order matching GM drum note positions on a piano keyboard.
-pub const LANE_DISPLAY_ORDER: [usize; 10] = [0, 1, 2, 3, 5, 6, 7, 8, 4, 9];
+pub const LANE_DISPLAY_ORDER: [usize; 11] = [0, 1, 2, 3, 5, 6, 7, 8, 4, 9, 10];
 
 #[derive(Clone, Copy)]
 pub struct LaneSpec {
@@ -52,7 +53,7 @@ impl LaneSpec {
     }
 }
 
-pub const LANES: [LaneSpec; 10] = [
+pub const LANES: [LaneSpec; 11] = [
     LaneSpec::new(
         "BD",
         "A",
@@ -133,6 +134,14 @@ pub const LANES: [LaneSpec; 10] = [
         "E5",
         Color::srgb(0.95, 0.35, 0.90),
     ),
+    LaneSpec::new(
+        "LBD",
+        "Z",
+        KeyCode::KeyZ,
+        "B1",
+        "F#3",
+        Color::srgb(0.85, 0.30, 0.45),
+    ),
 ];
 
 pub fn lane_display_slot(lane: usize) -> usize {
@@ -154,13 +163,15 @@ pub fn lane_to_dtx_channel(lane: usize) -> u32 {
         LANE_CY => 0x16,
         LANE_RD => 0x19,
         LANE_LC => 0x1A,
+        LANE_LBD => 0x1C,
         _ => DTX_CH_HH_CLOSE,
     }
 }
 
 pub fn dtx_drum_channel_to_lane(channel: u32) -> Option<usize> {
     match channel {
-        0x13 | 0x1C => Some(LANE_BD),
+        0x13 => Some(LANE_BD),
+        0x1C => Some(LANE_LBD),
         0x12 => Some(LANE_SD),
         0x17 => Some(LANE_FT),
         0x11 | 0x18 => Some(LANE_HH),
@@ -179,7 +190,8 @@ pub fn dtx_nosound_channel_to_lane(channel: u32) -> Option<usize> {
     match channel {
         0xB1 | 0xB8 => Some(LANE_HH),
         0xB2 => Some(LANE_SD),
-        0xB3 | 0xBE => Some(LANE_BD),
+        0xB3 => Some(LANE_BD),
+        0xBE => Some(LANE_LBD),
         0xB4 => Some(LANE_HT),
         0xB5 => Some(LANE_LT),
         0xB6 => Some(LANE_CY),
@@ -201,6 +213,110 @@ pub fn dtx_override_se_to_lane(channel: u32) -> Option<usize> {
     }
 }
 
+// =========================================================================
+// Guitar / bass channel mappings (BocuD EChannel).
+// =========================================================================
+
+/// Guitar lane indices (0..=4 visible: R/G/B/Y/P; 5..=8 control).
+pub const GUITAR_LANE_R: usize = 0;
+pub const GUITAR_LANE_G: usize = 1;
+pub const GUITAR_LANE_B: usize = 2;
+pub const GUITAR_LANE_Y: usize = 3;
+pub const GUITAR_LANE_P: usize = 4;
+pub const GUITAR_LANE_OPEN: usize = 5;
+pub const GUITAR_LANE_PICK: usize = 6;
+pub const GUITAR_LANE_DECIDE: usize = 7;
+pub const GUITAR_LANE_WAIL: usize = 8;
+
+/// Bass lane indices (0..=3 visible: R/G/B/P; 4..=7 control).
+pub const BASS_LANE_R: usize = 0;
+pub const BASS_LANE_G: usize = 1;
+pub const BASS_LANE_B: usize = 2;
+pub const BASS_LANE_P: usize = 3;
+pub const BASS_LANE_OPEN: usize = 4;
+pub const BASS_LANE_PICK: usize = 5;
+pub const BASS_LANE_DECIDE: usize = 6;
+pub const BASS_LANE_WAIL: usize = 7;
+
+/// Map a DTX channel to a guitar lane index. Returns `None` for
+/// non-guitar channels. Channel encoding per BocuD `EChannel`:
+/// 0x20..=0x27 = Open + R/G/B combinations (Guitar_Open=0x20,
+/// Guitar_xxBxx=0x21, Guitar_xGxxx=0x22, Guitar_xGBxx=0x23,
+/// Guitar_Rxxxx=0x24, ... Guitar_RGBxx=0x27).
+/// 0x28..=0x2C = Wailing (0x28=40) and long note (0x2C=44).
+/// 0x93..=0x9A = Y-suffixed, 0x9B..=0x9F = P-suffixed.
+/// 0xBA = NoChip (empty-pad hit sound).
+pub fn dtx_guitar_channel_to_lane(channel: u32) -> Option<usize> {
+    // Channel bit encoding for open + R/G/B range (0x20..=0x27):
+    // bit 0 (0x01) = B, bit 1 (0x02) = G, bit 2 (0x04) = R.
+    // R > G > B priority when multiple are set. Bit 5 (0x20) is the
+    // "open" base. Derived from BocuD `EChannel`: 0x21=B, 0x22=G,
+    // 0x23=GB, 0x24=R.
+    //
+    // The Y (0x93..=0x9A) and P (0x9B..=0x9F) ranges always map to the
+    // Y or P lane regardless of low-bit combinations (those bits encode
+    // meta-information like "with pick" / "with open" in BocuD's full
+    // system; for our purposes the lane is the Y or P lane).
+    match channel {
+        0x20..=0x27 => {
+            if (channel & 0x04) != 0 {
+                Some(GUITAR_LANE_R)
+            } else if (channel & 0x02) != 0 {
+                Some(GUITAR_LANE_G)
+            } else if (channel & 0x01) != 0 {
+                Some(GUITAR_LANE_B)
+            } else {
+                Some(GUITAR_LANE_OPEN)
+            }
+        }
+        0x28..=0x2C => Some(GUITAR_LANE_WAIL),
+        0x93..=0x9A => Some(GUITAR_LANE_Y),
+        0x9B..=0x9F => Some(GUITAR_LANE_P),
+        0xBA => Some(GUITAR_LANE_OPEN),
+        _ => None,
+    }
+}
+
+/// Map a DTX channel to a bass lane index. Returns `None` for non-bass
+/// channels. Channel encoding per BocuD `EChannel`:
+/// 0xA0..=0xA7 = Open + R/G/B combinations (R/G/B in bits 0/1/2).
+/// 0xA8..=0xAD = Wailing (0xA8=168).
+/// 0xC5..=0xCC = Y-suffixed (bass has no Y lane; routed to Y index).
+/// 0xCE..=0xD5 = P-suffixed.
+/// 0xBB = NoChip.
+pub fn dtx_bass_channel_to_lane(channel: u32) -> Option<usize> {
+    match channel {
+        0xA0..=0xA7 => {
+            if (channel & 0x04) != 0 {
+                Some(BASS_LANE_R)
+            } else if (channel & 0x02) != 0 {
+                Some(BASS_LANE_G)
+            } else if (channel & 0x01) != 0 {
+                Some(BASS_LANE_B)
+            } else {
+                Some(BASS_LANE_OPEN)
+            }
+        }
+        0xA8..=0xAD => Some(BASS_LANE_WAIL),
+        0xC5..=0xCC => {
+            // Bass has no Y lane; route to the Y index so the
+            // per-instrument parser can still surface the chip.
+            Some(GUITAR_LANE_Y)
+        }
+        0xCE..=0xD5 => Some(BASS_LANE_P),
+        0xBB => Some(BASS_LANE_OPEN),
+        _ => None,
+    }
+}
+
+pub fn is_guitar_channel(channel: u32) -> bool {
+    dtx_guitar_channel_to_lane(channel).is_some()
+}
+
+pub fn is_bass_channel(channel: u32) -> bool {
+    dtx_bass_channel_to_lane(channel).is_some()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadGroup {
     Hh,
@@ -214,7 +330,7 @@ pub fn lane_pad_group(lane: usize) -> Option<PadGroup> {
         LANE_HH | LANE_LC => Some(PadGroup::Hh),
         LANE_LT | LANE_FT => Some(PadGroup::Tom),
         LANE_CY | LANE_RD => Some(PadGroup::Cymbal),
-        LANE_BD | LANE_LP => Some(PadGroup::Bd),
+        LANE_BD | LANE_LP | LANE_LBD => Some(PadGroup::Bd),
         _ => None,
     }
 }
@@ -258,7 +374,7 @@ pub fn pad_group_lanes_for_search(
             }
             lanes
         }
-        PadGroup::Bd => vec![LANE_BD, LANE_LP],
+        PadGroup::Bd => vec![LANE_BD, LANE_LP, LANE_LBD],
     }
 }
 
@@ -271,7 +387,7 @@ mod tests {
         assert_eq!(dtx_nosound_channel_to_lane(0xB1), Some(LANE_HH));
         assert_eq!(dtx_nosound_channel_to_lane(0xB8), Some(LANE_HH));
         assert_eq!(dtx_nosound_channel_to_lane(0xB3), Some(LANE_BD));
-        assert_eq!(dtx_nosound_channel_to_lane(0xBE), Some(LANE_BD));
+        assert_eq!(dtx_nosound_channel_to_lane(0xBE), Some(LANE_LBD));
         assert_eq!(dtx_nosound_channel_to_lane(0xBC), Some(LANE_LC));
         assert_eq!(dtx_nosound_channel_to_lane(0xBA), None);
     }
@@ -301,6 +417,7 @@ mod tests {
         assert_eq!(lane_pad_group(LANE_RD), Some(PadGroup::Cymbal));
         assert_eq!(lane_pad_group(LANE_BD), Some(PadGroup::Bd));
         assert_eq!(lane_pad_group(LANE_LP), Some(PadGroup::Bd));
+        assert_eq!(lane_pad_group(LANE_LBD), Some(PadGroup::Bd));
         assert_eq!(lane_pad_group(LANE_SD), None);
     }
 
@@ -314,5 +431,75 @@ mod tests {
     fn lc_without_left_cymbal_notes_falls_back_to_hh_lane() {
         let lanes = pad_group_lanes_for_search(PadGroup::Hh, LANE_LC, |_| false);
         assert_eq!(lanes, vec![LANE_LC, LANE_HH]);
+    }
+
+    #[test]
+    fn guitar_channel_routes_to_five_visible_lanes() {
+        // 0x20 = open only.
+        assert_eq!(dtx_guitar_channel_to_lane(0x20), Some(GUITAR_LANE_OPEN));
+        // 0x21 = B only (bit 0).
+        assert_eq!(dtx_guitar_channel_to_lane(0x21), Some(GUITAR_LANE_B));
+        // 0x22 = G only (bit 1).
+        assert_eq!(dtx_guitar_channel_to_lane(0x22), Some(GUITAR_LANE_G));
+        // 0x23 = G+B → G wins (R > G > B).
+        assert_eq!(dtx_guitar_channel_to_lane(0x23), Some(GUITAR_LANE_G));
+        // 0x24 = R only (bit 2).
+        assert_eq!(dtx_guitar_channel_to_lane(0x24), Some(GUITAR_LANE_R));
+        // 0x25 = R+B → R wins.
+        assert_eq!(dtx_guitar_channel_to_lane(0x25), Some(GUITAR_LANE_R));
+        // 0x27 = R+G+B → R wins.
+        assert_eq!(dtx_guitar_channel_to_lane(0x27), Some(GUITAR_LANE_R));
+        // Wailing / long note.
+        assert_eq!(dtx_guitar_channel_to_lane(0x28), Some(GUITAR_LANE_WAIL));
+        assert_eq!(dtx_guitar_channel_to_lane(0x2C), Some(GUITAR_LANE_WAIL));
+        // Y-suffixed (whole range maps to Y lane).
+        assert_eq!(dtx_guitar_channel_to_lane(0x93), Some(GUITAR_LANE_Y));
+        assert_eq!(dtx_guitar_channel_to_lane(0x9A), Some(GUITAR_LANE_Y));
+        // P-suffixed.
+        assert_eq!(dtx_guitar_channel_to_lane(0x9B), Some(GUITAR_LANE_P));
+        assert_eq!(dtx_guitar_channel_to_lane(0x9F), Some(GUITAR_LANE_P));
+        // NoChip.
+        assert_eq!(dtx_guitar_channel_to_lane(0xBA), Some(GUITAR_LANE_OPEN));
+        // Non-guitar returns None.
+        assert_eq!(dtx_guitar_channel_to_lane(0x11), None);
+        assert_eq!(dtx_guitar_channel_to_lane(0x01), None);
+    }
+
+    #[test]
+    fn bass_channel_routes_to_four_visible_lanes() {
+        // 0xA0 = open only.
+        assert_eq!(dtx_bass_channel_to_lane(0xA0), Some(BASS_LANE_OPEN));
+        // 0xA1 = B only.
+        assert_eq!(dtx_bass_channel_to_lane(0xA1), Some(BASS_LANE_B));
+        // 0xA2 = G only.
+        assert_eq!(dtx_bass_channel_to_lane(0xA2), Some(BASS_LANE_G));
+        // 0xA4 = R only.
+        assert_eq!(dtx_bass_channel_to_lane(0xA4), Some(BASS_LANE_R));
+        // 0xA7 = R+G+B → R wins.
+        assert_eq!(dtx_bass_channel_to_lane(0xA7), Some(BASS_LANE_R));
+        // P-suffixed.
+        assert_eq!(dtx_bass_channel_to_lane(0xCE), Some(BASS_LANE_P));
+        assert_eq!(dtx_bass_channel_to_lane(0xD5), Some(BASS_LANE_P));
+        // Wailing.
+        assert_eq!(dtx_bass_channel_to_lane(0xA8), Some(BASS_LANE_WAIL));
+        // Y-suffixed bass (no Y lane; routed to Y index for parsing).
+        assert_eq!(dtx_bass_channel_to_lane(0xC5), Some(GUITAR_LANE_Y));
+        // NoChip.
+        assert_eq!(dtx_bass_channel_to_lane(0xBB), Some(BASS_LANE_OPEN));
+        // Non-bass returns None.
+        assert_eq!(dtx_bass_channel_to_lane(0x11), None);
+        assert_eq!(dtx_bass_channel_to_lane(0x20), None);
+    }
+
+    #[test]
+    fn is_guitar_or_bass_channel_classifier() {
+        assert!(is_guitar_channel(0x20));
+        assert!(is_guitar_channel(0x24));
+        assert!(!is_guitar_channel(0x11));
+        assert!(is_bass_channel(0xA0));
+        assert!(is_bass_channel(0xA4));
+        assert!(!is_bass_channel(0x11));
+        // Mutually exclusive (a channel is either guitar or bass or neither).
+        assert!(!(is_guitar_channel(0xA0) && is_bass_channel(0x20)));
     }
 }

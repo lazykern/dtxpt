@@ -33,9 +33,16 @@ pub(crate) struct LaneHitAudio<'w> {
 #[derive(Debug, Clone, Copy)]
 pub struct LaneHitEvent {
     pub lane: usize,
+    pub source: HitInputSource,
     /// Wall-clock instant when the trigger was first observed (or for MIDI,
     /// when the midir callback fired). Used to compute audio_clock_at_event.
     pub wall_time: Instant,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum HitInputSource {
+    Keyboard,
+    Midi,
 }
 
 #[derive(Resource, Default)]
@@ -63,21 +70,27 @@ pub(crate) fn capture_lane_inputs(
         return;
     }
     for lane in 0..LANES.len() {
-        if let Some(source) = bindings.lane_triggered_with_source(lane, &keyboard, &midi.note_on_events) {
+        if let Some(source) =
+            bindings.lane_triggered_with_source(lane, &keyboard, &midi.note_on_events)
+        {
             // Per-lane auto: skip input capture for lanes the autoplay drives.
             // Auto lane hits are simulated at note time by `autoplay_hit_notes`.
             // Skipping at capture time keeps the per-frame poll path clean and
             // avoids stamping `Instant::now()` for events we'd discard later.
-            if let Some(lane_enum) = DrumLane::from_index(lane) {
-                if run.active_mods.auto_lanes.contains(&lane_enum) {
-                    continue;
-                }
+            if let Some(lane_enum) = DrumLane::from_index(lane)
+                && run.active_mods.auto_lanes.contains(&lane_enum)
+            {
+                continue;
             }
-            let wall_time = match source {
-                LaneTriggerSource::Keyboard => Instant::now(),
-                LaneTriggerSource::Midi { event } => event.received_at,
+            let (source, wall_time) = match source {
+                LaneTriggerSource::Keyboard => (HitInputSource::Keyboard, Instant::now()),
+                LaneTriggerSource::Midi { event } => (HitInputSource::Midi, event.received_at),
             };
-            pending.events.push(LaneHitEvent { lane, wall_time });
+            pending.events.push(LaneHitEvent {
+                lane,
+                source,
+                wall_time,
+            });
         }
     }
 }
@@ -137,9 +150,16 @@ pub(crate) fn process_pending_lane_hits(
         // Per-lane auto filtering happens at capture time so the
         // wall_time stamp on the event is meaningful; the events
         // we receive here are all for non-auto lanes.
-        let wall_delta = now_wall.saturating_duration_since(event.wall_time).as_secs_f32();
+        let wall_delta = now_wall
+            .saturating_duration_since(event.wall_time)
+            .as_secs_f32();
         let audio_at_event = audio_now - wall_delta * song_rate;
         let elapsed = audio_at_event + timing_offset;
+
+        match event.source {
+            HitInputSource::Keyboard => run.used_keyboard = true,
+            HitInputSource::Midi => run.used_midi_in = true,
+        }
 
         flash_lane_receptor(event.lane, &mut flashes.p0());
         keyboard_viz::flash_key_cap(event.lane, &mut flashes.p1());

@@ -1,5 +1,7 @@
 use bevy::prelude::*;
-use dtxpt::chart::{Chart, ChartTiming, load_chart_from_path};
+use dtxpt::chart::{
+    Chart, ChartTiming, ChipPlayTimeComputeMode, load_chart_from_path_with_compute_mode,
+};
 
 use crate::app::markers::LoadingScreen;
 use crate::app::state::AppState;
@@ -23,9 +25,11 @@ pub struct ChartLoad {
 }
 
 impl ChartLoad {
-    pub fn start(&mut self, path: String) {
-        self.task
-            .start(move || load_chart_from_path(&path).map_err(|err| err.to_string()));
+    pub fn start(&mut self, path: String, chip_play_time_compute_mode: ChipPlayTimeComputeMode) {
+        self.task.start(move || {
+            load_chart_from_path_with_compute_mode(&path, chip_play_time_compute_mode)
+                .map_err(|err| err.to_string())
+        });
         self.loading = true;
     }
 
@@ -76,8 +80,12 @@ pub fn setup_loading_screen(
     ));
 }
 
-pub fn start_chart_load(selected: Res<SelectedChartPath>, mut load: ResMut<ChartLoad>) {
-    load.start(selected.0.clone());
+pub fn start_chart_load(
+    selected: Res<SelectedChartPath>,
+    config: Res<GameConfig>,
+    mut load: ResMut<ChartLoad>,
+) {
+    load.start(selected.0.clone(), config.chip_play_time_compute_mode);
 }
 
 pub fn poll_chart_load(

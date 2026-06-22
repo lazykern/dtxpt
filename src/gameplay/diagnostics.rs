@@ -48,6 +48,7 @@ pub fn reset_playback_diagnostics(mut diag: ResMut<PlaybackDiagnostics>) {
     *diag = PlaybackDiagnostics::default();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn monitor_playback_diagnostics(
     run: Res<RunState>,
     pause_state: Res<State<PauseState>>,

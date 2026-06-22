@@ -15,12 +15,12 @@ pub fn system_action_binding_value(
         .unwrap_or_else(|| "—".to_string())
 }
 
-pub fn lane_bindings_value(
+pub fn target_bindings_value(
     bindings: &[InputBindingConfig],
-    lane: usize,
+    target: BindingTarget,
     cursor: Option<usize>,
 ) -> String {
-    let indices = super::mutate::lane_binding_indices(bindings, lane);
+    let indices = super::mutate::target_binding_indices(bindings, target.clone());
     if indices.is_empty() {
         return "—".to_string();
     }
@@ -63,6 +63,17 @@ pub fn lane_bindings_value(
     parts.join(" | ")
 }
 
+pub fn lane_bindings_value(
+    bindings: &[InputBindingConfig],
+    lane: usize,
+    cursor: Option<usize>,
+) -> String {
+    let Some(target_lane) = DrumLane::from_index(lane) else {
+        return "—".to_string();
+    };
+    target_bindings_value(bindings, BindingTarget::DrumLane(target_lane), cursor)
+}
+
 fn midi_binding_label(device: &MidiDeviceFilter, note: u8, channel: Option<u8>) -> String {
     let mut label = midi_note_display_name(note);
     if let Some(channel) = channel {
@@ -88,9 +99,12 @@ fn midi_note_display_name(note: u8) -> String {
     format!("{name}{octave}")
 }
 
-pub fn keyboard_summary_for_lane(bindings: &[InputBindingConfig], lane: usize) -> String {
-    let keys = keyboard_keys_for_lane_config(bindings, lane);
-    let midi_count = midi_note_bindings_for_lane(bindings, lane).len();
+pub fn keyboard_summary_for_target(
+    bindings: &[InputBindingConfig],
+    target: BindingTarget,
+) -> String {
+    let keys = keyboard_keys_for_target_config(bindings, target.clone());
+    let midi_count = midi_note_bindings_for_target(bindings, target).len();
 
     let keyboard = match keys.as_slice() {
         [] => "—".to_string(),
@@ -110,18 +124,58 @@ pub fn keyboard_summary_for_lane(bindings: &[InputBindingConfig], lane: usize) -
     }
 }
 
-pub fn keyboard_keys_for_lane_config(bindings: &[InputBindingConfig], lane: usize) -> Vec<KeyCode> {
+pub fn keyboard_summary_for_lane(bindings: &[InputBindingConfig], lane: usize) -> String {
     let Some(target_lane) = DrumLane::from_index(lane) else {
-        return Vec::new();
+        return "—".to_string();
     };
+    keyboard_summary_for_target(bindings, BindingTarget::DrumLane(target_lane))
+}
 
+pub fn keyboard_keys_for_target_config(
+    bindings: &[InputBindingConfig],
+    target: BindingTarget,
+) -> Vec<KeyCode> {
+    let instrument = target.instrument();
     bindings
         .iter()
         .filter_map(|binding| match binding {
             InputBindingConfig {
+                instrument: bound_instrument,
                 source: InputSourceConfig::Keyboard { key },
-                target: BindingTarget::DrumLane(found),
-            } if *found == target_lane => keycode_from_name(key),
+                target: found,
+            } if *bound_instrument == instrument && *found == target => keycode_from_name(key),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn keyboard_keys_for_lane_config(bindings: &[InputBindingConfig], lane: usize) -> Vec<KeyCode> {
+    let Some(target_lane) = DrumLane::from_index(lane) else {
+        return Vec::new();
+    };
+    keyboard_keys_for_target_config(bindings, BindingTarget::DrumLane(target_lane))
+}
+
+pub fn midi_note_bindings_for_target(
+    bindings: &[InputBindingConfig],
+    target: BindingTarget,
+) -> Vec<(MidiDeviceFilter, u8, Option<u8>)> {
+    let instrument = target.instrument();
+    bindings
+        .iter()
+        .filter_map(|binding| match binding {
+            InputBindingConfig {
+                instrument: bound_instrument,
+                source:
+                    InputSourceConfig::MidiNote {
+                        device,
+                        note,
+                        channel,
+                    },
+                target: found,
+            } if *bound_instrument == instrument && *found == target => {
+                Some((device.clone(), *note, *channel))
+            }
             _ => None,
         })
         .collect()
@@ -134,20 +188,5 @@ pub fn midi_note_bindings_for_lane(
     let Some(target_lane) = DrumLane::from_index(lane) else {
         return Vec::new();
     };
-
-    bindings
-        .iter()
-        .filter_map(|binding| match binding {
-            InputBindingConfig {
-                source:
-                    InputSourceConfig::MidiNote {
-                        device,
-                        note,
-                        channel,
-                    },
-                target: BindingTarget::DrumLane(found),
-            } if *found == target_lane => Some((device.clone(), *note, *channel)),
-            _ => None,
-        })
-        .collect()
+    midi_note_bindings_for_target(bindings, BindingTarget::DrumLane(target_lane))
 }

@@ -17,9 +17,7 @@ use crate::gameplay::hud::{
     HudDisplayCache, sync_debug_hud_visibility, update_hud, update_judgement_text,
     update_render_stats,
 };
-use crate::gameplay::input::{
-    PendingLaneInputs, capture_lane_inputs, process_pending_lane_hits,
-};
+use crate::gameplay::input::{PendingLaneInputs, capture_lane_inputs, process_pending_lane_hits};
 use crate::gameplay::interp::{RenderVisualClock, interp_visual_clock};
 use crate::gameplay::judgement::autoplay_hit_notes;
 use crate::gameplay::judgement::miss_late_notes;
@@ -27,6 +25,7 @@ use crate::gameplay::layout::{
     apply_key_cap_layout, apply_playfield_layout, sync_playfield_layout,
 };
 use crate::gameplay::live_tuning::{adjust_lane_speed, adjust_timing_offset};
+use crate::gameplay::rendering::bga::{setup_bga_media, update_bga_media};
 use crate::gameplay::rendering::playfield_viz::{
     update_hit_bursts, update_lane_receptor_flashes, update_metronome_lines, update_note_visuals,
 };
@@ -45,14 +44,19 @@ impl Plugin for GameplayPlugin {
         // chart/SE timing assumptions. Default Bevy is 64Hz (a power of 2 for
         // lossless f32 conversion); we override to 60Hz for rhythm-game
         // consistency.
-        app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(1.0 / 60.0)));
+        app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(
+            1.0 / 60.0,
+        )));
         app.init_resource::<PlaybackDiagnostics>()
             .init_resource::<RenderVisualClock>()
             .init_resource::<crate::audio::RestartGestureState>()
             .init_resource::<PauseUiState>()
             .init_resource::<HudDisplayCache>()
             .init_resource::<PendingLaneInputs>()
-            .add_systems(OnEnter(AppState::Playing), setup_gameplay)
+            .add_systems(
+                OnEnter(AppState::Playing),
+                (setup_gameplay, setup_bga_media).chain(),
+            )
             .add_systems(OnEnter(AppState::Playing), reset_playback_diagnostics)
             .add_systems(
                 OnEnter(AppState::Playing),
@@ -129,7 +133,8 @@ impl Plugin for GameplayPlugin {
             .add_systems(
                 Update,
                 (
-                    update_note_visuals.after(apply_playfield_layout),
+                    update_bga_media.after(apply_playfield_layout),
+                    update_note_visuals.after(update_bga_media),
                     update_metronome_lines.after(apply_playfield_layout),
                     update_hit_bursts,
                     update_lane_receptor_flashes,

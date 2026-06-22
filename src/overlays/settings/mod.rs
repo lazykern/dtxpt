@@ -16,9 +16,9 @@ pub use values::settings_overlay_toggle;
 pub(crate) use rebind::settings_overlay_input;
 pub(crate) use rows::{SettingCategory, SettingRow, filtered_settings};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RebindingTarget {
-    Lane(usize),
+    Lane(dtxpt::input::BindingTarget),
     System(dtxpt::input::SystemAction),
 }
 
@@ -29,6 +29,10 @@ pub struct SettingsOverlay {
     pub(crate) category: SettingCategory,
     pub(crate) rebinding: Option<RebindingTarget>,
     pub(crate) lane_binding_cursor: usize,
+    /// Set when the most recent rebind replaced a previously-bound
+    /// target on the same instrument. UI surfaces it as a transient
+    /// conflict message; cleared on any other rebind action.
+    pub(crate) last_rebind_conflict: Option<String>,
 }
 
 #[derive(Component)]
@@ -41,6 +45,7 @@ pub struct SettingsUiCache {
     pub(crate) category: SettingCategory,
     pub(crate) rebinding: Option<RebindingTarget>,
     pub(crate) lane_binding_cursor: usize,
+    pub(crate) last_rebind_conflict: Option<String>,
     pub(crate) values: String,
 }
 

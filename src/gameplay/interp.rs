@@ -69,19 +69,31 @@ mod tests {
 
     #[test]
     fn now_lerps_prev_to_current() {
-        let r = RenderVisualClock { prev: 1.0, current: 2.0, alpha: 0.3 };
+        let r = RenderVisualClock {
+            prev: 1.0,
+            current: 2.0,
+            alpha: 0.3,
+        };
         assert!((r.now() - 1.3).abs() < 1e-6);
     }
 
     #[test]
     fn now_at_alpha_zero_is_prev() {
-        let r = RenderVisualClock { prev: 5.0, current: 10.0, alpha: 0.0 };
+        let r = RenderVisualClock {
+            prev: 5.0,
+            current: 10.0,
+            alpha: 0.0,
+        };
         assert!((r.now() - 5.0).abs() < 1e-6);
     }
 
     #[test]
     fn now_at_alpha_one_is_current() {
-        let r = RenderVisualClock { prev: 5.0, current: 10.0, alpha: 1.0 };
+        let r = RenderVisualClock {
+            prev: 5.0,
+            current: 10.0,
+            alpha: 1.0,
+        };
         assert!((r.now() - 10.0).abs() < 1e-6);
     }
 
@@ -98,7 +110,11 @@ mod tests {
     fn handles_negative_visual_clock() {
         // Pre-startup state: visual_elapsed = -WARMUP_SECS
         let warmup = -3.0;
-        let r = RenderVisualClock { prev: warmup, current: warmup, alpha: 0.5 };
+        let r = RenderVisualClock {
+            prev: warmup,
+            current: warmup,
+            alpha: 0.5,
+        };
         assert!((r.now() - warmup).abs() < 1e-6);
     }
 }

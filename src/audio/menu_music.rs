@@ -79,6 +79,7 @@ fn play_cached_bgm(
     Some(handle)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_menu_music(
     time: Res<Time>,
     current: Res<CurrentSong>,

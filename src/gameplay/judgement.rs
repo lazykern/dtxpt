@@ -6,17 +6,18 @@ use crate::app::state::{PauseState, is_paused};
 use crate::audio::*;
 use crate::config::HitSoundPriority;
 use crate::gameplay::clock::ChartClock;
-use crate::gameplay::interp::RenderVisualClock;
 use crate::gameplay::constants::*;
 use crate::gameplay::gauge::apply_gauge;
 use crate::gameplay::input::flash_lane_receptor;
+use crate::gameplay::interp::RenderVisualClock;
 use crate::gameplay::layout::PlayfieldLayout;
 use crate::gameplay::rendering::playfield_viz::spawn_hit_burst;
 use crate::gameplay::run::RunState;
 use dtxpt::chart::{Chart, Judgement, NoteState, chart_notes_complete, resolve_empty_hit_sound};
 use dtxpt::input::bindings::DrumLane;
 use dtxpt::input::lanes::{
-    PadGroup, lane_pad_group, lane_to_dtx_channel, pad_group_lanes_for_search,
+    LANE_CY, LANE_LC, LANE_RD, PadGroup, lane_pad_group, lane_to_dtx_channel,
+    pad_group_lanes_for_search,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -37,22 +38,24 @@ pub(crate) fn process_lane_hit(
     rng: &mut GameRng,
     lane_receptors: &mut Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
 ) {
+    let elapsed = elapsed_with_pedal_lag(lane, elapsed, run.pedal_lag_time_ms);
+    let judgement_lanes = judgement_lanes_for_hit(lane, run.cymbal_free);
     let hit_sound_priority = hit_sound_priority_for_lane(lane, run);
     let lanes_with_notes: std::collections::HashSet<usize> =
         chart.notes.iter().map(|note| note.lane).collect();
     let chart_has_lane = |lane_index: usize| lanes_with_notes.contains(&lane_index);
     let search_lanes = |lane_index: usize| -> Vec<usize> {
-        if hit_sound_priority == HitSoundPriority::PadOverChip {
-            if let Some(group) = lane_pad_group(lane_index) {
-                return pad_group_lanes_for_search(group, lane_index, chart_has_lane);
-            }
+        if hit_sound_priority == HitSoundPriority::PadOverChip
+            && let Some(group) = lane_pad_group(lane_index)
+        {
+            return pad_group_lanes_for_search(group, lane_index, chart_has_lane);
         }
         vec![lane_index]
     };
 
     let mut best: Option<(usize, f32)> = None;
     for (index, note) in chart.notes.iter().enumerate() {
-        if note.lane != lane || note.state != NoteState::Pending {
+        if !judgement_lanes.contains(&note.lane) || note.state != NoteState::Pending {
             continue;
         }
         let delta = elapsed - note.time;
@@ -81,6 +84,7 @@ pub(crate) fn process_lane_hit(
                     index,
                     elapsed,
                     hit_sound_priority,
+                    &judgement_lanes,
                     chart_has_lane,
                 );
                 let sound_note = &chart.notes[sound_index];
@@ -104,17 +108,13 @@ pub(crate) fn process_lane_hit(
         flash_lane_receptor(lane, lane_receptors);
 
         let lanes = search_lanes(lane);
-        let (nearest_wav, channel) = resolve_empty_hit_sound(
-            &chart.empty_hit_events,
-            lane,
-            &lanes,
-            elapsed,
-        )
-        .or_else(|| {
-            find_nearest_chart_note_for_empty_hit(&chart.notes, &lanes, elapsed)
-                .map(|n| (n.wav_id, n.channel))
-        })
-        .unwrap_or((None, lane_to_dtx_channel(lane)));
+        let (nearest_wav, channel) =
+            resolve_empty_hit_sound(&chart.empty_hit_events, lane, &lanes, elapsed)
+                .or_else(|| {
+                    find_nearest_chart_note_for_empty_hit(&chart.notes, &lanes, elapsed)
+                        .map(|n| (n.wav_id, n.channel))
+                })
+                .unwrap_or((None, lane_to_dtx_channel(lane)));
         if run.drum_hit_sound {
             play_drum_sound(
                 nearest_wav,
@@ -134,6 +134,29 @@ pub(crate) fn process_lane_hit(
     }
 }
 
+fn elapsed_with_pedal_lag(lane: usize, elapsed: f32, pedal_lag_time_ms: i32) -> f32 {
+    if is_pedal_lane(lane) {
+        elapsed + pedal_lag_time_ms as f32 / 1000.0
+    } else {
+        elapsed
+    }
+}
+
+fn is_pedal_lane(lane: usize) -> bool {
+    matches!(
+        DrumLane::from_index(lane),
+        Some(DrumLane::Bd | DrumLane::Lp | DrumLane::Lbd)
+    )
+}
+
+fn judgement_lanes_for_hit(lane: usize, cymbal_free: bool) -> Vec<usize> {
+    if cymbal_free && matches!(lane, LANE_CY | LANE_RD | LANE_LC) {
+        vec![LANE_CY, LANE_RD, LANE_LC]
+    } else {
+        vec![lane]
+    }
+}
+
 fn hit_sound_priority_for_lane(lane: usize, run: &RunState) -> HitSoundPriority {
     match lane_pad_group(lane) {
         Some(PadGroup::Hh) => run.hit_sound_priority_hh,
@@ -150,16 +173,21 @@ fn resolve_hit_sound_note_index(
     hit_index: usize,
     elapsed: f32,
     priority: HitSoundPriority,
+    judgement_lanes: &[usize],
     chart_has_lane: impl Fn(usize) -> bool,
 ) -> usize {
     if priority == HitSoundPriority::ChipOverPad {
         return hit_index;
     }
-    let lanes = pad_group_lanes_for_search(
-        lane_pad_group(lane).expect("pad group lane"),
-        lane,
-        chart_has_lane,
-    );
+    let lanes = if judgement_lanes.len() > 1 {
+        judgement_lanes.to_vec()
+    } else {
+        pad_group_lanes_for_search(
+            lane_pad_group(lane).expect("pad group lane"),
+            lane,
+            chart_has_lane,
+        )
+    };
     find_nearest_pending_note_index(&chart.notes, &lanes, elapsed).unwrap_or(hit_index)
 }
 
@@ -250,7 +278,7 @@ pub fn miss_late_notes(
 /// Directly applies the Perfect judgement + visual burst + drum sound for each
 /// due note, mirroring the success branch of process_lane_hit but without the
 /// lane-search (the target note is pre-selected).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn autoplay_hit_notes(
     pause_state: Res<State<PauseState>>,
     mut chart: ResMut<Chart>,
@@ -260,9 +288,7 @@ pub(crate) fn autoplay_hit_notes(
     clock: Res<ChartClock>,
     render_clock: Res<RenderVisualClock>,
     mut hit_audio: crate::gameplay::input::LaneHitAudio,
-    mut flashes: ParamSet<(
-        Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,
-    )>,
+    mut flashes: ParamSet<(Query<(&LaneReceptor, &mut Sprite, &mut LaneReceptorFlash)>,)>,
 ) {
     if run.finished
         || run.failed
@@ -379,7 +405,7 @@ pub fn apply_judgement(
         run.score = TARGET_SCORE;
     }
 
-    apply_gauge(run, judgement);
+    apply_gauge(run, judgement, autoplayed);
 }
 
 #[cfg(test)]
@@ -400,7 +426,10 @@ mod tests {
 
     #[test]
     fn empty_hit_finds_nearest_note_beyond_judge_window() {
-        let notes = vec![note(10.0, 0, 1, NoteState::Pending), note(20.0, 0, 2, NoteState::Pending)];
+        let notes = vec![
+            note(10.0, 0, 1, NoteState::Pending),
+            note(20.0, 0, 2, NoteState::Pending),
+        ];
         let nearest = find_nearest_chart_note_for_empty_hit(&notes, &[0], 16.0).unwrap();
         assert_eq!(nearest.wav_id, Some(2));
     }
@@ -417,7 +446,10 @@ mod tests {
 
     #[test]
     fn pending_note_search_stays_within_poor_window() {
-        let notes = vec![note(10.0, 0, 1, NoteState::Pending), note(20.0, 0, 2, NoteState::Pending)];
+        let notes = vec![
+            note(10.0, 0, 1, NoteState::Pending),
+            note(20.0, 0, 2, NoteState::Pending),
+        ];
         assert!(find_nearest_pending_note(&notes, &[0], 15.0).is_none());
     }
 
@@ -433,6 +465,62 @@ mod tests {
         }];
         let sound = resolve_empty_hit_sound(&events, 0, &[0], 5.0).unwrap();
         assert_eq!(sound, (Some(99), 0xB3));
+    }
+
+    #[test]
+    fn pedal_lag_shifts_only_pedal_lanes() {
+        assert!((elapsed_with_pedal_lag(DrumLane::Bd.index(), 10.0, 25) - 10.025).abs() < 0.001);
+        assert!((elapsed_with_pedal_lag(DrumLane::Lp.index(), 10.0, -10) - 9.99).abs() < 0.001);
+        assert_eq!(elapsed_with_pedal_lag(DrumLane::Sd.index(), 10.0, 25), 10.0);
+    }
+
+    #[test]
+    fn pedal_lag_ignores_unknown_lane() {
+        assert_eq!(elapsed_with_pedal_lag(usize::MAX, 10.0, 25), 10.0);
+    }
+
+    #[test]
+    fn cymbal_free_expands_cymbal_judgement_lanes() {
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Cy.index(), true),
+            vec![
+                DrumLane::Cy.index(),
+                DrumLane::Rd.index(),
+                DrumLane::Lc.index()
+            ]
+        );
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Rd.index(), true),
+            vec![
+                DrumLane::Cy.index(),
+                DrumLane::Rd.index(),
+                DrumLane::Lc.index()
+            ]
+        );
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Lc.index(), true),
+            vec![
+                DrumLane::Cy.index(),
+                DrumLane::Rd.index(),
+                DrumLane::Lc.index()
+            ]
+        );
+    }
+
+    #[test]
+    fn cymbal_free_disabled_keeps_exact_lane() {
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Cy.index(), false),
+            vec![DrumLane::Cy.index()]
+        );
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Lc.index(), false),
+            vec![DrumLane::Lc.index()]
+        );
+        assert_eq!(
+            judgement_lanes_for_hit(DrumLane::Sd.index(), true),
+            vec![DrumLane::Sd.index()]
+        );
     }
 
     #[test]
@@ -452,7 +540,7 @@ mod tests {
 
     #[test]
     fn reconcile_restart_clears_autoplayed_flag() {
-        use dtxpt::chart::{reconcile_notes_for_restart, NoteState};
+        use dtxpt::chart::{NoteState, reconcile_notes_for_restart};
         let mut notes = vec![note(1.0, 0, 1, NoteState::Hit(Judgement::Perfect))];
         notes[0].autoplayed = true;
         reconcile_notes_for_restart(&mut notes);

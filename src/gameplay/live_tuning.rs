@@ -29,10 +29,7 @@ pub fn play_mode_change_allowed_during_play(_active_practice: Option<bool>) -> b
 }
 
 pub fn song_rate_change_allowed_during_play(active_practice: Option<bool>) -> bool {
-    match active_practice {
-        None => true,
-        Some(practice) => practice,
-    }
+    active_practice.unwrap_or(true)
 }
 
 pub fn adjust_timing_offset(
@@ -118,7 +115,10 @@ mod tests {
 
     #[test]
     fn normal_mode_blocks_practice_tools() {
-        assert!(!action_allowed_during_play(SystemAction::SeekForward, false));
+        assert!(!action_allowed_during_play(
+            SystemAction::SeekForward,
+            false
+        ));
         assert!(!song_rate_change_allowed_during_play(Some(false)));
     }
 

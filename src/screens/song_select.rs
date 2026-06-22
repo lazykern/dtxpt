@@ -15,14 +15,14 @@ use crate::current_song::{
     enrich_current_song_from_library,
 };
 use crate::gameplay::SelectedChartPath;
-use crate::persistence::ScoreStore;
+use crate::persistence::{ScoreStore, read_score_ini, save_score_store, score_ini_path};
 use crate::ui::fonts::{UiFonts, text_font};
 use crate::ui::input::UiKeyRepeat;
 use crate::ui::palette::*;
 use crate::ui::search_char;
 use crate::ui::theme::*;
 use crate::ui::widgets::*;
-use dtxpt::song_library::{self, pick_chart_index};
+use dtxpt::song_library::{self, SongSortMode, pick_chart_index};
 
 #[derive(Resource, Default)]
 pub struct SongPreviewImage {
@@ -45,6 +45,7 @@ pub struct SongSelectUiState {
     selected_chart: usize,
     entry_count: usize,
     scanning: bool,
+    sort_mode: SongSortMode,
 }
 
 pub fn setup_song_select(
@@ -91,7 +92,7 @@ pub fn setup_song_select(
                             TextColor(TEXT_ACCENT),
                         ),
                         (
-                            Text::new("Type search  F3 random  Enter play  Esc menu"),
+                            Text::new("Type search  F3 random  F4 sort  Enter play  Esc menu"),
                             text_font(&fonts, FONT_CAPTION),
                             TextColor(TEXT_MUTED),
                         ),
@@ -138,7 +139,7 @@ pub fn setup_song_select(
                         ),
                     ],
                 ),
-                footer_hint_bundle(&fonts, "↑/↓ song  ←/→ difficulty  F1 settings"),
+                footer_hint_bundle(&fonts, "↑/↓ song  ←/→ difficulty  F1 settings  F4 sort"),
             ],
         )],
     ));
@@ -153,6 +154,7 @@ fn song_select_list_dirty(
         || state.selected_entry != library.selected_entry
         || state.entry_count != library.entries.len()
         || state.scanning != scanning
+        || state.sort_mode != library.sort_mode
 }
 
 fn song_select_chart_dirty(state: &SongSelectUiState, library: &song_library::SongLibrary) -> bool {
@@ -217,6 +219,14 @@ fn rebuild_song_list(
     commands.entity(list_entity).with_children(|parent| {
         parent.spawn((
             Text::new(search_line),
+            text_font(fonts, FONT_CAPTION),
+            TextColor(TEXT_MUTED),
+        ));
+        parent.spawn((
+            Text::new(format!(
+                "Sort: {}   F4 cycles sort",
+                library.sort_mode.label()
+            )),
             text_font(fonts, FONT_CAPTION),
             TextColor(TEXT_MUTED),
         ));
@@ -331,6 +341,7 @@ pub(crate) fn refresh_song_select_ui(
     ui_state.selected_chart = library.selected_chart;
     ui_state.entry_count = library.entries.len();
     ui_state.scanning = scan.scanning;
+    ui_state.sort_mode = library.sort_mode;
 
     let Ok(list_entity) = list_query.single() else {
         return;
@@ -371,10 +382,13 @@ fn rebuild_meta_panel(
             let chart = &entry.charts[chart_index];
             let artist = entry.artist.as_deref().unwrap_or("Unknown artist");
             let level = chart.level.map(fmt_level_num).unwrap_or_else(|| "?".into());
-            let best = scores
-                .best_for_path(&chart.path)
+            let best_score = scores.best_for_path(&chart.path);
+            let best = best_score
                 .map(|s| format!("{:07} ({:.2}%)", s.score, s.accuracy))
                 .unwrap_or_else(|| "—".into());
+            let best_rank = best_score
+                .and_then(|s| (!s.rank.trim().is_empty()).then_some(s.rank.as_str()))
+                .unwrap_or("—");
 
             parent.spawn((
                 Node {
@@ -408,10 +422,26 @@ fn rebuild_meta_panel(
                 TextColor(TEXT_PRIMARY),
             ));
             parent.spawn((
-                Text::new(format!("Best score: {best}")),
+                Text::new(format!("Best score: {best}   Rank: {best_rank}")),
                 text_font(fonts, FONT_BODY),
                 TextColor(SUCCESS),
             ));
+            if let Some(score) = best_score {
+                let history = score
+                    .history
+                    .iter()
+                    .filter(|line| !line.trim().is_empty())
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !history.is_empty() {
+                    parent.spawn((
+                        Text::new(format!("History: {}", history.join("  "))),
+                        text_font(fonts, FONT_CAPTION),
+                        TextColor(TEXT_MUTED),
+                    ));
+                }
+            }
             if !entry.box_path.is_empty() {
                 parent.spawn((
                     Text::new(format!("Group: {}", entry.box_path.join(" / "))),
@@ -515,7 +545,16 @@ pub(crate) fn song_select_input(
     }
     if keyboard.just_pressed(KeyCode::F3) {
         let random_index = rng_next_usize(&mut rng);
-        library.select_random(random_index, &config.preferred_difficulty);
+        library.select_random_with_sub_box(
+            random_index,
+            &config.preferred_difficulty,
+            config.random_sub_box,
+        );
+        changed = true;
+    }
+    if keyboard.just_pressed(KeyCode::F4) {
+        library.sort_mode = library.sort_mode.next();
+        library.normalize_selection(&config.preferred_difficulty);
         changed = true;
     }
     if let Some(key) = repeat.update(
@@ -699,15 +738,25 @@ pub(crate) fn poll_song_library_scan(
     mut current: ResMut<CurrentSong>,
     mut selected: ResMut<SelectedChartPath>,
     config: Res<GameConfig>,
+    mut scores: ResMut<ScoreStore>,
 ) {
     let Some(updated) = scan.poll() else {
         return;
     };
 
+    let search = library.search.clone();
+    let sort_mode = library.sort_mode;
     *library = updated;
+    library.search = search;
+    library.sort_mode = sort_mode;
     library.normalize_selection(&config.preferred_difficulty);
     enrich_current_song_from_library(&mut current, &mut library);
     current.sync_selected_chart_path(&mut selected);
+    if merge_score_ini_into_store(&library, &mut scores)
+        && let Err(err) = save_score_store(&scores)
+    {
+        warn!("failed to save score cache: {err}");
+    }
     if let Err(err) =
         song_library::save_library_cache(&library_cache_path(), &config.chart_root, &library)
     {
@@ -717,6 +766,34 @@ pub(crate) fn poll_song_library_scan(
         "song library scan complete: {} entries",
         library.entries.len()
     );
+}
+
+fn merge_score_ini_into_store(
+    library: &song_library::SongLibrary,
+    scores: &mut ScoreStore,
+) -> bool {
+    let mut changed = false;
+    for entry in &library.entries {
+        for chart in &entry.charts {
+            let Ok(Some(score)) = read_score_ini(score_ini_path(&chart.path)) else {
+                continue;
+            };
+            let best = score.to_best_score();
+            let key = chart.path.to_string_lossy().to_string();
+            let should_update = scores.scores.get(&key).is_none_or(|current| {
+                best.score > current.score
+                    || (best.score == current.score && best.accuracy > current.accuracy)
+                    || (best.score == current.score
+                        && (best.accuracy - current.accuracy).abs() < f32::EPSILON
+                        && best.max_combo > current.max_combo)
+            });
+            if should_update {
+                scores.scores.insert(key, best);
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 fn persist_preferred_difficulty(config: &mut GameConfig, label: &str) {

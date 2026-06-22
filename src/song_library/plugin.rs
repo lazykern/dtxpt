@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use crate::util::background_task::{BackgroundPoll, BackgroundTask};
 
 use super::cache::load_cached_library;
-use super::model::SongLibrary;
+use super::model::{SongLibrary, SongSortMode};
 use super::scanner::scan_song_library;
 
 #[derive(Resource, Debug)]
@@ -50,5 +50,6 @@ fn empty_library() -> SongLibrary {
         selected_entry: 0,
         selected_chart: 0,
         search: String::new(),
+        sort_mode: SongSortMode::Title,
     }
 }

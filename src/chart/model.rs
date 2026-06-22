@@ -12,12 +12,88 @@ pub struct Chart {
     pub title: String,
     pub source: String,
     pub bpm: f32,
+    pub skill_level: f32,
+    /// Drum-mode note slice (10 lanes, indices 0..=10). Existing
+    /// drum gameplay reads from this. Guitar/Bass charts have an
+    /// empty `notes` vec but populated `guitar_notes` / `bass_notes`.
     pub notes: Vec<ChartNote>,
+    /// Guitar-mode note slice (5 visible lanes, plus open + control).
+    /// Empty unless the DTX file has guitar channels (0x20..0x27,
+    /// 0x31..0x38, 0x93..0x9A, 0x9B..0xA2, long-note 0x2C=44, wailing
+    /// 0x28..0x2C, NoChip 0xBA etc.). Populated by the parser when
+    /// guitar channels are encountered.
+    pub guitar_notes: Vec<ChartNote>,
+    /// Bass-mode note slice (4 visible lanes). Populated when bass
+    /// channels are encountered.
+    pub bass_notes: Vec<ChartNote>,
+    /// Per-chart guitar long notes (start + end pair). Distinct from
+    /// `guitar_notes` because long notes span a time range. Phase
+    /// C-Guitar.2.
+    pub guitar_long_notes: Vec<LongNote>,
+    /// Per-chart bass long notes.
+    pub bass_long_notes: Vec<LongNote>,
     pub empty_hit_events: Vec<EmptyHitEvent>,
     pub metronome_beats: Vec<MetronomeBeat>,
     pub scheduled_audio: Vec<ScheduledAudio>,
     pub wav_info: Vec<WavInfo>,
+    /// Static BGA image definitions from `#BMPxx`.
+    pub bga_images: Vec<BgaImageDef>,
+    /// Timed BGA image layer events (`#mmm04`, `#mmm07`, and layer 3-8 channels).
+    pub bga_events: Vec<BgaEvent>,
+    /// Static background image from `BACKGROUND` / `STAGEFILE`.
+    pub background_image: Option<String>,
     pub chart_dir: String,
+}
+
+/// Long note (sustained chip) for guitar/bass. `start_time` is when
+/// the chip becomes active; `end_time` is when it should be released.
+/// A successful hit at `start_time` keeps the chip "held" until
+/// `end_time`; an early release is judged Poor. Phase C-Guitar.2.
+#[derive(Clone, Debug)]
+pub struct LongNote {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub lane: usize,
+    pub channel: u32,
+    pub wav_id: Option<u32>,
+    pub state: NoteState,
+}
+
+impl Default for Chart {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            source: String::new(),
+            bpm: 120.0,
+            skill_level: 0.0,
+            notes: Vec::new(),
+            guitar_notes: Vec::new(),
+            bass_notes: Vec::new(),
+            guitar_long_notes: Vec::new(),
+            bass_long_notes: Vec::new(),
+            empty_hit_events: Vec::new(),
+            metronome_beats: Vec::new(),
+            scheduled_audio: Vec::new(),
+            wav_info: Vec::new(),
+            bga_images: Vec::new(),
+            bga_events: Vec::new(),
+            background_image: None,
+            chart_dir: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BgaImageDef {
+    pub id: u32,
+    pub filename: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BgaEvent {
+    pub time: f32,
+    pub layer: u8,
+    pub bmp_id: u32,
 }
 
 #[derive(Clone)]
@@ -100,8 +176,9 @@ impl WavRole {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub enum NoteState {
+    #[default]
     Pending,
     Hit(Judgement),
     Missed,
@@ -179,11 +256,11 @@ pub fn chart_notes_complete(notes: &[ChartNote]) -> bool {
         .all(|note| !matches!(note.state, NoteState::Pending))
 }
 
-pub fn active_empty_hit_for_lane<'a>(
-    events: &'a [EmptyHitEvent],
+pub fn active_empty_hit_for_lane(
+    events: &[EmptyHitEvent],
     lane: usize,
     elapsed: f32,
-) -> Option<&'a EmptyHitEvent> {
+) -> Option<&EmptyHitEvent> {
     events
         .iter()
         .filter(|event| event.lane == lane && event.time <= elapsed)
@@ -393,7 +470,12 @@ mod tests {
             title: String::new(),
             source: String::new(),
             bpm: 120.0,
+            skill_level: 0.0,
             notes: Vec::new(),
+            guitar_notes: Vec::new(),
+            bass_notes: Vec::new(),
+            guitar_long_notes: Vec::new(),
+            bass_long_notes: Vec::new(),
             empty_hit_events: Vec::new(),
             metronome_beats: Vec::new(),
             scheduled_audio: vec![
@@ -411,6 +493,9 @@ mod tests {
                 },
             ],
             wav_info: Vec::new(),
+            bga_images: Vec::new(),
+            bga_events: Vec::new(),
+            background_image: None,
             chart_dir: String::new(),
         };
         let bgm_time = chart_bgm_start_time(&chart);

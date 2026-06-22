@@ -5,9 +5,9 @@ use bevy::window::{PrimaryWindow, Window};
 use bevy::winit::WinitSettings;
 
 use dtxpt::input::{
-    InputBindings, MidiInputState, add_keyboard_lane_binding, add_midi_lane_binding,
-    lane_binding_indices, remove_lane_binding_at, reset_system_keyboard_binding,
-    set_system_keyboard_binding,
+    BassLane, BindingTarget, GuitarLane, InputBindings, MidiInputState, add_keyboard_binding,
+    add_midi_binding, remove_target_binding_at, reset_system_keyboard_binding,
+    set_system_keyboard_binding, target_binding_indices,
 };
 
 use crate::app::state::OverlayState;
@@ -42,7 +42,7 @@ pub(crate) fn settings_overlay_input(
 
     let mut needs_redraw = false;
 
-    if let Some(target) = overlay.rebinding {
+    if let Some(target) = overlay.rebinding.clone() {
         let mut saved = false;
         match target {
             RebindingTarget::Lane(lane) => {
@@ -53,28 +53,33 @@ pub(crate) fn settings_overlay_input(
                     ) {
                         continue;
                     }
-                    if add_keyboard_lane_binding(&mut config.bindings, lane, *key).is_ok() {
+                    if let Ok(result) =
+                        add_keyboard_binding(&mut config.bindings, lane.clone(), *key)
+                    {
                         saved = true;
+                        overlay.last_rebind_conflict = result.replaced.map(|prev| {
+                            format!("Replaced previous binding to {}", target_label(&prev))
+                        });
                     }
                     overlay.rebinding = None;
                     break;
                 }
-                if overlay.rebinding.is_some() {
-                    for event in &midi.note_on_events {
-                        if add_midi_lane_binding(
-                            &mut config.bindings,
-                            lane,
-                            &event.device_name,
-                            event.channel,
-                            event.note,
-                        )
-                        .is_ok()
-                        {
-                            saved = true;
-                            overlay.rebinding = None;
-                            break;
-                        }
+                if overlay.rebinding.is_some()
+                    && let Some(event) = midi.note_on_events.first()
+                {
+                    if let Ok(result) = add_midi_binding(
+                        &mut config.bindings,
+                        lane.clone(),
+                        &event.device_name,
+                        event.channel,
+                        event.note,
+                    ) {
+                        saved = true;
+                        overlay.last_rebind_conflict = result.replaced.map(|prev| {
+                            format!("Replaced previous binding to {}", target_label(&prev))
+                        });
                     }
+                    overlay.rebinding = None;
                 }
             }
             RebindingTarget::System(action) => {
@@ -109,7 +114,7 @@ pub(crate) fn settings_overlay_input(
     }
     let rows = filtered_settings(&overlay.search, overlay.category);
     let selected_lane = rows.get(overlay.selected).and_then(|row| match row {
-        SettingRow::LaneKey(lane) => Some(*lane),
+        SettingRow::LaneKey(lane) => Some(lane.clone()),
         _ => None,
     });
 
@@ -122,15 +127,15 @@ pub(crate) fn settings_overlay_input(
         && (keyboard.just_pressed(KeyCode::Backspace) || keyboard.just_pressed(KeyCode::Delete))
     {
         let mut changed = false;
-        if let Some(lane) = selected_lane {
-            let entry_count = lane_binding_indices(&config.bindings, lane).len();
+        if let Some(lane) = selected_lane.clone() {
+            let entry_count = target_binding_indices(&config.bindings, lane.clone()).len();
             if entry_count > 0 {
                 let cursor = overlay
                     .lane_binding_cursor
                     .min(entry_count.saturating_sub(1));
-                changed = remove_lane_binding_at(&mut config.bindings, lane, cursor);
+                changed = remove_target_binding_at(&mut config.bindings, lane.clone(), cursor);
                 if changed {
-                    let remaining = lane_binding_indices(&config.bindings, lane).len();
+                    let remaining = target_binding_indices(&config.bindings, lane).len();
                     overlay.lane_binding_cursor =
                         overlay.lane_binding_cursor.min(remaining.saturating_sub(1));
                 }
@@ -192,8 +197,8 @@ pub(crate) fn settings_overlay_input(
             needs_redraw = true;
         }
 
-        let lane_cursor_delta = if let Some(lane) = selected_lane {
-            let entry_count = lane_binding_indices(&config.bindings, lane).len();
+        let lane_cursor_delta = if let Some(lane) = selected_lane.clone() {
+            let entry_count = target_binding_indices(&config.bindings, lane).len();
             if entry_count > 0 {
                 if repeat_key == Some(KeyCode::ArrowRight) {
                     Some(1)
@@ -210,9 +215,11 @@ pub(crate) fn settings_overlay_input(
         };
 
         if let Some(delta) = lane_cursor_delta {
-            let entry_count =
-                lane_binding_indices(&config.bindings, selected_lane.expect("lane row selected"))
-                    .len();
+            let entry_count = target_binding_indices(
+                &config.bindings,
+                selected_lane.clone().expect("lane row selected"),
+            )
+            .len();
             let next = if delta > 0 {
                 (overlay.lane_binding_cursor + 1).min(entry_count.saturating_sub(1))
             } else {
@@ -234,13 +241,13 @@ pub(crate) fn settings_overlay_input(
             0.0
         };
         if keyboard.just_pressed(KeyCode::Enter) {
-            match rows[overlay.selected] {
-                SettingRow::LaneKey(lane) => {
-                    overlay.rebinding = Some(RebindingTarget::Lane(lane));
+            match rows.get(overlay.selected) {
+                Some(SettingRow::LaneKey(lane)) => {
+                    overlay.rebinding = Some(RebindingTarget::Lane(lane.clone()));
                     needs_redraw = true;
                 }
-                SettingRow::SystemAction(action) => {
-                    overlay.rebinding = Some(RebindingTarget::System(action));
+                Some(SettingRow::SystemAction(action)) => {
+                    overlay.rebinding = Some(RebindingTarget::System(*action));
                     needs_redraw = true;
                 }
                 _ => {}
@@ -249,9 +256,12 @@ pub(crate) fn settings_overlay_input(
 
         if delta != 0.0 {
             let mut run = run;
+            let Some(selected) = rows.get(overlay.selected).cloned() else {
+                return;
+            };
             let changed = match windows.single_mut() {
                 Ok(mut window) => apply_setting_delta(
-                    rows[overlay.selected],
+                    &selected,
                     delta,
                     &mut config,
                     &mut mix,
@@ -260,7 +270,7 @@ pub(crate) fn settings_overlay_input(
                     Some(&mut winit),
                 ),
                 Err(_) => apply_setting_delta(
-                    rows[overlay.selected],
+                    &selected,
                     delta,
                     &mut config,
                     &mut mix,
@@ -279,4 +289,62 @@ pub(crate) fn settings_overlay_input(
     }
 
     let _ = needs_redraw;
+}
+
+/// Format a binding target for the rebind conflict message.
+fn target_label(target: &BindingTarget) -> String {
+    match target {
+        BindingTarget::DrumLane(lane) => {
+            format!("drum {}", dtxpt::input::lanes::LANES[lane.index()].label)
+        }
+        BindingTarget::GuitarLane(lane) => format!(
+            "guitar {}",
+            match lane {
+                GuitarLane::R => "R",
+                GuitarLane::G => "G",
+                GuitarLane::B => "B",
+                GuitarLane::Y => "Y",
+                GuitarLane::P => "P",
+                _ => "?",
+            }
+        ),
+        BindingTarget::BassLane(lane) => format!(
+            "bass {}",
+            match lane {
+                BassLane::R => "R",
+                BassLane::G => "G",
+                BassLane::B => "B",
+                BassLane::P => "P",
+                _ => "?",
+            }
+        ),
+        BindingTarget::System(action) => format!("system {}", action.label()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dtxpt::input::{BassLane, BindingTarget, DrumLane, GuitarLane, SystemAction};
+
+    use super::target_label;
+
+    #[test]
+    fn target_label_formats_drum_guitar_bass_and_system() {
+        assert_eq!(
+            target_label(&BindingTarget::DrumLane(DrumLane::Bd)),
+            "drum BD"
+        );
+        assert_eq!(
+            target_label(&BindingTarget::GuitarLane(GuitarLane::R)),
+            "guitar R"
+        );
+        assert_eq!(
+            target_label(&BindingTarget::BassLane(BassLane::P)),
+            "bass P"
+        );
+        assert_eq!(
+            target_label(&BindingTarget::System(SystemAction::PauseToggle)),
+            "system Pause / resume"
+        );
+    }
 }

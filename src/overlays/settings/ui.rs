@@ -3,8 +3,6 @@ use bevy::window::{PrimaryWindow, Window};
 use bevy::winit::WinitSettings;
 use bevy_framepace::FramepaceSettings;
 
-use dtxpt::input::lanes::LANES;
-
 use crate::app::markers::{SettingsOverlayScreen, SettingsRowMarker};
 use crate::audio::AudioMix;
 use crate::config::{GameConfig, save_game_config};
@@ -147,7 +145,8 @@ pub(crate) fn refresh_settings_overlay(
     cache.search = overlay.search.clone();
     cache.selected = overlay.selected;
     cache.category = overlay.category;
-    cache.rebinding = overlay.rebinding;
+    cache.rebinding = overlay.rebinding.clone();
+    cache.last_rebind_conflict = overlay.last_rebind_conflict.clone();
     cache.lane_binding_cursor = overlay.lane_binding_cursor;
     cache.values = values;
 
@@ -171,11 +170,11 @@ pub(crate) fn refresh_settings_overlay(
             TextColor(TEXT_SECONDARY),
         ));
 
-        if let Some(target) = overlay.rebinding {
+        if let Some(target) = &overlay.rebinding {
             let prompt = match target {
                 RebindingTarget::Lane(lane) => format!(
                     "Rebinding {} — press key or MIDI pad (Esc cancel)",
-                    LANES[lane].label
+                    SettingRow::LaneKey(lane.clone()).label()
                 ),
                 RebindingTarget::System(action) => {
                     format!("Rebinding {} — press key (Esc cancel)", action.label())
@@ -183,6 +182,19 @@ pub(crate) fn refresh_settings_overlay(
             };
             parent.spawn((
                 Text::new(prompt),
+                text_font(&fonts, FONT_BODY),
+                TextColor(WARNING),
+            ));
+        }
+
+        // After a successful rebind that replaced an existing binding on
+        // the same instrument, surface the conflict as a transient
+        // status line. Cleared on the next user action.
+        if overlay.rebinding.is_none()
+            && let Some(msg) = cache.last_rebind_conflict.as_ref()
+        {
+            parent.spawn((
+                Text::new(msg.clone()),
                 text_font(&fonts, FONT_BODY),
                 TextColor(WARNING),
             ));
@@ -382,10 +394,10 @@ pub(crate) fn settings_row_interaction(
             continue;
         }
         overlay.selected = marker.index;
-        let row = rows[marker.index];
+        let row = rows[marker.index].clone();
         match row {
             SettingRow::LaneKey(lane) => {
-                overlay.rebinding = Some(RebindingTarget::Lane(lane));
+                overlay.rebinding = Some(RebindingTarget::Lane(lane.clone()));
                 continue;
             }
             SettingRow::SystemAction(action) => {
@@ -396,7 +408,7 @@ pub(crate) fn settings_row_interaction(
         }
         let changed = match windows.single_mut() {
             Ok(mut window) => apply_setting_delta(
-                row,
+                &row,
                 1.0,
                 &mut config,
                 &mut mix,
@@ -405,7 +417,7 @@ pub(crate) fn settings_row_interaction(
                 Some(&mut winit),
             ),
             Err(_) => apply_setting_delta(
-                row,
+                &row,
                 1.0,
                 &mut config,
                 &mut mix,

@@ -8,7 +8,10 @@ use dtxpt::input::{InputBindings, MidiInputState, SystemAction};
 
 use crate::app::state::{AppState, OverlayState, PauseState, is_paused};
 use crate::audio::AudioMix;
-use crate::config::{FpsCap, GameConfig, HitSoundPriority};
+use crate::config::{
+    BDGroup, CYGroup, DamageLevel, DarkMode, FTGroup, FpsCap, GameConfig, GaugeMode, HHGroup,
+    HitSoundPriority, RDPosition, RandomMode,
+};
 use crate::gameplay::constants::*;
 use crate::gameplay::gauge::GAUGE_START;
 use crate::gameplay::mods::resolve_auto_lanes;
@@ -34,7 +37,7 @@ pub(crate) fn apply_fps_cap(
 }
 
 pub(crate) fn apply_setting_delta(
-    row: SettingRow,
+    row: &SettingRow,
     delta: f32,
     config: &mut GameConfig,
     mix: &mut AudioMix,
@@ -67,12 +70,15 @@ pub(crate) fn apply_setting_delta(
         SettingRow::Practice => {
             let prev = config.practice_song_select;
             config.practice_song_select = !prev;
-            if let Some(run) = run {
-                if run.practice != config.practice_song_select {
-                    run.practice = config.practice_song_select;
-                    reset_run_for_mode_change(run);
-                }
+            if let Some(run) = run
+                && run.practice != config.practice_song_select
+            {
+                run.practice = config.practice_song_select;
+                reset_run_for_mode_change(run);
             }
+        }
+        SettingRow::SkillMode => {
+            config.skill_mode = config.skill_mode.next();
         }
         SettingRow::AutoMode => {
             let prev = config.auto_mode;
@@ -84,18 +90,18 @@ pub(crate) fn apply_setting_delta(
             }
         }
         SettingRow::PerLaneAuto(lane) => {
-            if config.per_lane_auto.contains(&lane) {
-                config.per_lane_auto.remove(&lane);
+            if config.per_lane_auto.contains(lane) {
+                config.per_lane_auto.remove(lane);
             } else {
-                config.per_lane_auto.insert(lane);
+                config.per_lane_auto.insert(*lane);
             }
             // In Normal mode the run is locked; per_lane changes only take
             // effect at next run start. In Practice we propagate live.
-            if let Some(run) = run {
-                if run.practice {
-                    run.active_mods.auto_lanes =
-                        resolve_auto_lanes(&config.per_lane_auto, config.auto_mode);
-                }
+            if let Some(run) = run
+                && run.practice
+            {
+                run.active_mods.auto_lanes =
+                    resolve_auto_lanes(&config.per_lane_auto, config.auto_mode);
             }
         }
         SettingRow::LaneKey(_) | SettingRow::SystemAction(_) => {}
@@ -106,12 +112,147 @@ pub(crate) fn apply_setting_delta(
                 run.lane_speed = config.lane_speed;
             }
         }
+        SettingRow::PedalLagTime => {
+            config.pedal_lag_time_ms =
+                (config.pedal_lag_time_ms + delta.signum() as i32).clamp(-100, 100);
+            if let Some(run) = run {
+                run.pedal_lag_time_ms = config.pedal_lag_time_ms;
+            }
+        }
         SettingRow::TimingOffset => {
             config.timing_offset =
                 (config.timing_offset + delta * TIMING_OFFSET_STEP).clamp(-0.5, 0.5);
             if let Some(run) = run {
                 run.timing_offset = config.timing_offset;
             }
+        }
+        SettingRow::GuitarTimingOffset => {
+            config.guitar_offset =
+                (config.guitar_offset + delta * TIMING_OFFSET_STEP).clamp(-0.5, 0.5);
+            if let Some(run) = run {
+                run.guitar_offset = config.guitar_offset;
+            }
+        }
+        SettingRow::BassTimingOffset => {
+            config.bass_offset = (config.bass_offset + delta * TIMING_OFFSET_STEP).clamp(-0.5, 0.5);
+            if let Some(run) = run {
+                run.bass_offset = config.bass_offset;
+            }
+        }
+        SettingRow::PlaySpeedNum => {
+            config.play_speed_num =
+                (config.play_speed_num as i32 + delta.signum() as i32).clamp(1, 100) as u32;
+        }
+        SettingRow::PlaySpeedDen => {
+            config.play_speed_den =
+                (config.play_speed_den as i32 + delta.signum() as i32).clamp(1, 100) as u32;
+        }
+        SettingRow::SaveScoreIfModifiedPlaySpeed => {
+            config.save_score_if_modified_play_speed = !config.save_score_if_modified_play_speed;
+        }
+        SettingRow::HhGroup => {
+            config.hh_group = cycle_enum(config.hh_group, delta, |g| match g {
+                HHGroup::AllSplit => HHGroup::HhOnlySplit,
+                HHGroup::HhOnlySplit => HHGroup::LcOnlySplit,
+                HHGroup::LcOnlySplit => HHGroup::AllCommon,
+                HHGroup::AllCommon => HHGroup::AllSplit,
+            });
+        }
+        SettingRow::FtGroup => {
+            config.ft_group = cycle_enum(config.ft_group, delta, |g| match g {
+                FTGroup::Split => FTGroup::Common,
+                FTGroup::Common => FTGroup::Split,
+            });
+        }
+        SettingRow::CyGroup => {
+            config.cy_group = cycle_enum(config.cy_group, delta, |g| match g {
+                CYGroup::Split => CYGroup::Common,
+                CYGroup::Common => CYGroup::Split,
+            });
+        }
+        SettingRow::BdGroup => {
+            config.bd_group = cycle_enum(config.bd_group, delta, |g| match g {
+                BDGroup::Split => BDGroup::BdAndLp,
+                BDGroup::BdAndLp => BDGroup::LpPair,
+                BDGroup::LpPair => BDGroup::BothBd,
+                BDGroup::BothBd => BDGroup::Split,
+            });
+        }
+        SettingRow::RdPosition => {
+            config.rd_position = cycle_enum(config.rd_position, delta, |p| match p {
+                RDPosition::RdRc => RDPosition::RcRd,
+                RDPosition::RcRd => RDPosition::RdRc,
+            });
+        }
+        SettingRow::DarkMode => {
+            config.dark = cycle_enum(config.dark, delta, |d| match d {
+                DarkMode::Off => DarkMode::Half,
+                DarkMode::Half => DarkMode::Full,
+                DarkMode::Full => DarkMode::Off,
+            });
+        }
+        SettingRow::RandomMode => {
+            config.random = cycle_enum(config.random, delta, |r| match r {
+                RandomMode::Off => RandomMode::Mirror,
+                RandomMode::Mirror => RandomMode::Random,
+                RandomMode::Random => RandomMode::SuperRandom,
+                RandomMode::SuperRandom => RandomMode::HyperRandom,
+                RandomMode::HyperRandom => RandomMode::MasterRandom,
+                RandomMode::MasterRandom => RandomMode::AnotherRandom,
+                RandomMode::AnotherRandom => RandomMode::Off,
+            });
+        }
+        SettingRow::GaugeMode => {
+            config.gauge.mode = cycle_enum(config.gauge.mode, delta, |m| match m {
+                GaugeMode::Normal => GaugeMode::Hard,
+                GaugeMode::Hard => GaugeMode::Death,
+                GaugeMode::Death => GaugeMode::Extreme,
+                GaugeMode::Extreme => GaugeMode::ExHard,
+                GaugeMode::ExHard => GaugeMode::Normal,
+            });
+        }
+        SettingRow::Risky => {
+            // Risky: 0 = off, 1..=10 = Risky N. Negative deltas cycle
+            // back through 10.
+            let current = config.gauge.risky_initial;
+            let next = if delta > 0.0 {
+                (current + 1).min(10)
+            } else {
+                current.checked_sub(1).unwrap_or(10)
+            };
+            config.gauge.risky_initial = next;
+            if let Some(run) = run {
+                run.risky_initial = next;
+                run.risky_times_remaining = next;
+            }
+        }
+        SettingRow::DamageLevel => {
+            config.gauge.damage_level = cycle_enum(config.gauge.damage_level, delta, |d| match d {
+                DamageLevel::Small => DamageLevel::Normal,
+                DamageLevel::Normal => DamageLevel::High,
+                DamageLevel::High => DamageLevel::Small,
+            });
+            if let Some(run) = run {
+                run.damage_level = config.gauge.damage_level;
+            }
+        }
+        SettingRow::AutoAddGage => {
+            config.gauge.auto_add_gauge = !config.gauge.auto_add_gauge;
+            if let Some(run) = run {
+                run.auto_add_gauge = config.gauge.auto_add_gauge;
+            }
+        }
+        SettingRow::StoicMode => {
+            config.stoic_mode = !config.stoic_mode;
+        }
+        SettingRow::CompactMode => {
+            config.compact_mode = !config.compact_mode;
+        }
+        SettingRow::RandomSubBox => {
+            config.random_sub_box = !config.random_sub_box;
+        }
+        SettingRow::WaveDriftCorrection => {
+            config.wave_drift_correction = !config.wave_drift_correction;
         }
         SettingRow::SongRate => {
             config.song_playback_rate = (config.song_playback_rate + delta * SONG_RATE_STEP)
@@ -128,6 +269,21 @@ pub(crate) fn apply_setting_delta(
             config.metronome_sound = !config.metronome_sound;
             if let Some(run) = run {
                 run.metronome_sound = config.metronome_sound;
+            }
+        }
+        SettingRow::UseOsTimer => {
+            config.use_os_timer = !config.use_os_timer;
+        }
+        SettingRow::ChipPlayTimeComputeMode => {
+            config.chip_play_time_compute_mode = config.chip_play_time_compute_mode.next();
+        }
+        SettingRow::WriteScoreIni => {
+            config.write_score_ini = !config.write_score_ini;
+        }
+        SettingRow::CymbalFree => {
+            config.cymbal_free = !config.cymbal_free;
+            if let Some(run) = run {
+                run.cymbal_free = config.cymbal_free;
             }
         }
         SettingRow::LpMuting => {
@@ -214,6 +370,24 @@ fn cycle_hit_sound_priority(current: HitSoundPriority, delta: f32) -> HitSoundPr
     }
 }
 
+/// Cycle a small enum to its next (or previous) value. `next` maps
+/// each variant to its successor. For positive deltas we apply
+/// `next` once. For negative deltas we step forward through the
+/// cycle until we find the value whose successor is `current`
+/// (the "previous" value). Works for any cycle length (2..=7).
+fn cycle_enum<T: Copy + PartialEq>(current: T, delta: f32, next: fn(T) -> T) -> T {
+    if delta > 0.0 {
+        return next(current);
+    }
+    let mut previous = current;
+    let mut candidate = next(current);
+    while candidate != current {
+        previous = candidate;
+        candidate = next(candidate);
+    }
+    previous
+}
+
 pub fn settings_overlay_toggle(
     keyboard: Res<ButtonInput<KeyCode>>,
     midi: Res<MidiInputState>,
@@ -243,5 +417,67 @@ pub fn settings_overlay_toggle(
     };
     if can_open {
         next_overlay.set(OverlayState::Settings);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negative_delta_cycles_to_previous_enum_variant() {
+        let mut config = GameConfig::default();
+        let mut mix = AudioMix::from_config(&config);
+
+        assert_eq!(config.random, RandomMode::Off);
+        assert!(apply_setting_delta(
+            &SettingRow::RandomMode,
+            -1.0,
+            &mut config,
+            &mut mix,
+            None,
+            None,
+            None,
+        ));
+        assert_eq!(config.random, RandomMode::AnotherRandom);
+
+        assert!(apply_setting_delta(
+            &SettingRow::GaugeMode,
+            -1.0,
+            &mut config,
+            &mut mix,
+            None,
+            None,
+            None,
+        ));
+        assert_eq!(config.gauge.mode, GaugeMode::ExHard);
+    }
+
+    #[test]
+    fn per_instrument_offsets_apply_live_to_config() {
+        let mut config = GameConfig::default();
+        let mut mix = AudioMix::from_config(&config);
+
+        assert!(apply_setting_delta(
+            &SettingRow::GuitarTimingOffset,
+            1.0,
+            &mut config,
+            &mut mix,
+            None,
+            None,
+            None,
+        ));
+        assert!(apply_setting_delta(
+            &SettingRow::BassTimingOffset,
+            -1.0,
+            &mut config,
+            &mut mix,
+            None,
+            None,
+            None,
+        ));
+
+        assert!((config.guitar_offset - TIMING_OFFSET_STEP).abs() < f32::EPSILON);
+        assert!((config.bass_offset + TIMING_OFFSET_STEP).abs() < f32::EPSILON);
     }
 }

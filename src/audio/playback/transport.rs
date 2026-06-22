@@ -96,31 +96,30 @@ pub(crate) fn sync_elapsed_from_audio(
     let dt_advance = fixed_dt * run.song_playback_rate;
     let mut next_audio = previous_audio + dt_advance;
 
-    if let Some(ref bgm) = bgm_instance {
-        if let Some(pos) = audio_instances
+    if let Some(ref bgm) = bgm_instance
+        && let Some(pos) = audio_instances
             .get(&bgm.handle)
             .and_then(|inst| inst.state().position())
-        {
-            let measured = bgm.start_time + pos as f32;
-            // BASS invalid-time hotfix: ignore audio position reads that jump >500ms vs
-            // the running clock unless the game itself stalled. Without this, a buffer
-            // underrun or stream reinit can drag the audio clock backwards ~20ms/frame
-            // and visibly desync the visual.
-            let bass_glitch = (measured - previous_audio).abs() > 0.5 && fixed_dt <= 0.5;
-            if bass_glitch {
-                warn!(
-                    "BASS: ignoring suspicious position read measured={:.3} prev={:.3} delta={:.3}",
-                    measured,
-                    previous_audio,
-                    measured - previous_audio,
-                );
-            } else if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
-                let drift = measured - next_audio;
-                let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
-                let correction = (drift * catchup)
-                    .clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
-                next_audio += correction;
-            }
+    {
+        let measured = bgm.start_time + pos as f32;
+        // BASS invalid-time hotfix: ignore audio position reads that jump >500ms vs
+        // the running clock unless the game itself stalled. Without this, a buffer
+        // underrun or stream reinit can drag the audio clock backwards ~20ms/frame
+        // and visibly desync the visual.
+        let bass_glitch = (measured - previous_audio).abs() > 0.5 && fixed_dt <= 0.5;
+        if bass_glitch {
+            warn!(
+                "BASS: ignoring suspicious position read measured={:.3} prev={:.3} delta={:.3}",
+                measured,
+                previous_audio,
+                measured - previous_audio,
+            );
+        } else if measured >= previous_audio - MAX_AUDIO_BACKSTEP_SECS {
+            let drift = measured - next_audio;
+            let catchup = (VISUAL_CORRECTION_GAIN * fixed_dt).clamp(0.0, 1.0);
+            let correction =
+                (drift * catchup).clamp(-MAX_VISUAL_CORRECTION_SECS, MAX_VISUAL_CORRECTION_SECS);
+            next_audio += correction;
         }
     }
 
@@ -156,7 +155,8 @@ pub(crate) fn sync_elapsed_from_audio(
     if run.elapsed >= 0.0 {
         run.started = true;
     }
-    run.judgement_timer.tick(std::time::Duration::from_secs_f32(fixed_dt));
+    run.judgement_timer
+        .tick(std::time::Duration::from_secs_f32(fixed_dt));
 }
 
 pub(crate) fn stop_all_playback(
