@@ -9,7 +9,7 @@ Current after the 2026-06-22 A–F milestone. Items here are known gaps or expli
 | Result media (RESULTIMAGE / RESULTSOUND variants) | Deferred | Result data parity landed first; media assets are a later result-screen polish pass. |
 | Lyrics / #IF conditionals / specialty DTX directives | Deferred | Core chart portability works for supported gameplay slices; rare directives remain parser expansion work. |
 | Dedicated StageClear / StageFail screens and SFX | Partial | Gauge fail/result state exists; separate interstitial screens and SFX are visual/audio polish. |
-| Stoic mode full animation suppression | Partial | Config + Settings row exist. Full suppression across song-select/performance animations remains visual parity work. |
+| Stoic mode full animation suppression | [x] | `update_screen_fade_in` snaps to full alpha when `GameConfig.stoic_mode`. `update_button_interactions` keeps the static border. `update_bga_media` snaps BGAPAN to the start rect so BGA animations stop. Full UI surface covered for the surfaces that had visible transitions; if a future transition slips through, the system-level gate here extends by adding the same `if config.stoic_mode { snap }` pattern. |
 | OS sleep / unfocused frame sleep knobs | Deferred | dtxpt currently relies on Bevy/winit + bevy_framepace; BocuD Windows sleep knobs are not wired. |
 | bUseOSTimer | Deferred | BocuD Windows timer mode does not map directly; dtxpt uses the audio clock as timing master. |
 | Guitar/Bass detailed BestRank panels | Partial | Rank imports and song-select badge exist for current best score; per-instrument panel polish remains. |

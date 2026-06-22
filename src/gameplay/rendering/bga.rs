@@ -60,9 +60,11 @@ pub(crate) fn setup_bga_media(mut commands: Commands, chart: Res<Chart>) {
     commands.insert_resource(state);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_bga_media(
     mut commands: Commands,
     chart: Res<Chart>,
+    config: Res<crate::config::GameConfig>,
     render_clock: Res<RenderVisualClock>,
     layout: Res<PlayfieldLayout>,
     mut images: ResMut<Assets<Image>>,
@@ -123,12 +125,19 @@ pub(crate) fn update_bga_media(
         state.layer_entities.insert(layer, (event.bmp_id, entity));
     }
 
-    apply_bgapan_animations(&chart.bga_events, render_clock.current, &mut sprites, &layout);
+    apply_bgapan_animations(
+        &chart.bga_events,
+        render_clock.current,
+        config.stoic_mode,
+        &mut sprites,
+        &layout,
+    );
 }
 
 fn apply_bgapan_animations(
     events: &[BgaEvent],
     elapsed: f32,
+    stoic_mode: bool,
     sprites: &mut Query<(&mut Sprite, &mut Transform), With<BgaSprite>>,
     layout: &PlayfieldLayout,
 ) {
@@ -140,7 +149,14 @@ fn apply_bgapan_animations(
         if t < 0.0 || t > pan.transition_seconds {
             continue;
         }
-        let (src, dst) = interpolate_bgapan(&pan, t);
+        let (src, dst) = if stoic_mode {
+            // Stoic mode: BGAPAN animation is suppressed; snap to the
+            // start rect so the layer is fully static. Mirrors BocuD's
+            // `bストイックモード` behaviour.
+            (pan.src_start, pan.dst_start)
+        } else {
+            interpolate_bgapan(&pan, t)
+        };
         // Apply to the sprite whose entity corresponds to this layer's
         // bmp_id. We don't track the entity here; the caller already
         // updates bmp_ids, so the sprite is the one whose rect/custom_size
