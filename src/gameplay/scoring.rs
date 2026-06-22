@@ -357,6 +357,9 @@ mod tests {
             video_events: Vec::new(),
             avipan: std::collections::BTreeMap::new(),
             premovie: None,
+            result_image: dtxpt::chart::ResultMedia::default(),
+            result_movie: dtxpt::chart::ResultMedia::default(),
+            result_sound: dtxpt::chart::ResultMedia::default(),
         };
         let progress = progress_string(&chart);
         assert_eq!(progress.len(), 64);

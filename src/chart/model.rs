@@ -64,6 +64,61 @@ pub struct Chart {
     /// `#PREMOVIE` directive value — song-select preview video
     /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1101`).
     pub premovie: Option<String>,
+    /// `#RESULTIMAGE` directive values, keyed by rank. Each rank maps to
+    /// a separate image file. The result screen picks the entry matching
+    /// the achieved rank.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1103`.)
+    pub result_image: ResultMedia,
+    /// `#RESULTMOVIE` directive values.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1104`.)
+    pub result_movie: ResultMedia,
+    /// `#RESULTSOUND` directive values.
+    /// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:1105`.)
+    pub result_sound: ResultMedia,
+}
+
+/// Per-rank media file mapping for a single directive family. Mirrors
+/// `CDTX.STRESULT`
+/// (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:910`).
+/// Each entry is a filename or path; unset ranks stay `None`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ResultMedia {
+    pub ss: Option<String>,
+    pub s: Option<String>,
+    pub a: Option<String>,
+    pub b: Option<String>,
+    pub c: Option<String>,
+    pub d: Option<String>,
+    pub e: Option<String>,
+}
+
+impl ResultMedia {
+    /// Pick the entry matching the player's achieved rank. Returns
+    /// `None` if the rank is unset or the family has no entry for it.
+    pub fn for_rank(&self, rank: &str) -> Option<&str> {
+        match rank {
+            "SS" => self.ss.as_deref(),
+            "S" => self.s.as_deref(),
+            "A" => self.a.as_deref(),
+            "B" => self.b.as_deref(),
+            "C" => self.c.as_deref(),
+            "D" => self.d.as_deref(),
+            "E" => self.e.as_deref(),
+            _ => None,
+        }
+    }
+    pub fn set(&mut self, rank: &str, filename: String) {
+        match rank {
+            "SS" => self.ss = Some(filename),
+            "S" => self.s = Some(filename),
+            "A" => self.a = Some(filename),
+            "B" => self.b = Some(filename),
+            "C" => self.c = Some(filename),
+            "D" => self.d = Some(filename),
+            "E" => self.e = Some(filename),
+            _ => {}
+        }
+    }
 }
 
 /// Long note (sustained chip) for guitar/bass. `start_time` is when
@@ -105,6 +160,9 @@ impl Default for Chart {
             video_events: Vec::new(),
             avipan: BTreeMap::new(),
             premovie: None,
+            result_image: ResultMedia::default(),
+            result_movie: ResultMedia::default(),
+            result_sound: ResultMedia::default(),
         }
     }
 }
@@ -622,6 +680,9 @@ mod tests {
             video_events: Vec::new(),
             avipan: BTreeMap::new(),
             premovie: None,
+            result_image: ResultMedia::default(),
+            result_movie: ResultMedia::default(),
+            result_sound: ResultMedia::default(),
         };
         let bgm_time = chart_bgm_start_time(&chart);
         let stick_se_times = [2.0];

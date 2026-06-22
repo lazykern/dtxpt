@@ -4,7 +4,8 @@ use anyhow::{Result, anyhow};
 
 use crate::chart::model::{
     BgaEvent, BgaImageDef, BgaPanRaw, BgaRect, Chart, ChartNote, EmptyHitEvent, LongNote, NoteState,
-    ScheduledAudio, ScheduledAudioKind, VideoDef, VideoEvent, VideoMode, WavInfo, WavRole,
+    ResultMedia, ScheduledAudio, ScheduledAudioKind, VideoDef, VideoEvent, VideoMode, WavInfo,
+    WavRole,
 };
 use crate::chart::timing::{ChartTiming, ChipPlayTimeComputeMode};
 use crate::input::lanes::{
@@ -150,6 +151,9 @@ pub fn parse_dtx_chart_with_compute_mode(
     let mut avi_files: Vec<VideoDef> = Vec::new();
     let mut avipan_registry: BTreeMap<u32, BgaPanRaw> = BTreeMap::new();
     let mut premovie: Option<String> = None;
+    let mut result_image: ResultMedia = ResultMedia::default();
+    let mut result_movie: ResultMedia = ResultMedia::default();
+    let mut result_sound: ResultMedia = ResultMedia::default();
     let mut wav_volumes: HashMap<u32, i32> = HashMap::new();
     let mut wav_pans: HashMap<u32, i32> = HashMap::new();
     let mut bgm_wav = None;
@@ -243,6 +247,24 @@ pub fn parse_dtx_chart_with_compute_mode(
         }
         if command.eq_ignore_ascii_case("PREMOVIE") {
             premovie = Some(value.to_string());
+            continue;
+        }
+        if command.eq_ignore_ascii_case("RESULTIMAGE")
+            || command.eq_ignore_ascii_case("RESULTMOVIE")
+            || command.eq_ignore_ascii_case("RESULTSOUND")
+        {
+            // Format: `#RESULTIMAGE <rank> <filename>`.
+            // (`references/DTXmaniaNX-BocuD/DTXMania/Score,Song/CDTX.cs:5078`.)
+            if let Some((rank, filename)) = value.split_once(char::is_whitespace) {
+                let target = if command.eq_ignore_ascii_case("RESULTIMAGE") {
+                    &mut result_image
+                } else if command.eq_ignore_ascii_case("RESULTMOVIE") {
+                    &mut result_movie
+                } else {
+                    &mut result_sound
+                };
+                target.set(rank, filename.trim().to_string());
+            }
             continue;
         }
         if command.eq_ignore_ascii_case("BACKGROUND") || command.eq_ignore_ascii_case("STAGEFILE") {
@@ -728,6 +750,9 @@ pub fn parse_dtx_chart_with_compute_mode(
             video_events,
             avipan: avipan_registry,
             premovie,
+            result_image,
+            result_movie,
+            result_sound,
         },
         timing,
     ))
@@ -1173,6 +1198,40 @@ mod tests {
     }
 
     #[test]
+    fn result_image_directive_populates_rank_keyed_entry() {
+        let text = "\
+#TITLE: result image\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#RESULTIMAGE SS splash.png\n\
+#RESULTIMAGE A good.png\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "result_image.dtx", ".").unwrap();
+        assert_eq!(chart.result_image.for_rank("SS"), Some("splash.png"));
+        assert_eq!(chart.result_image.for_rank("A"), Some("good.png"));
+        assert_eq!(chart.result_image.for_rank("S"), None);
+        assert_eq!(chart.result_movie.for_rank("SS"), None);
+    }
+
+    #[test]
+    fn result_movie_and_sound_directives_use_separate_families() {
+        let text = "\
+#TITLE: result media\n\
+#BPM: 120\n\
+#WAV01: kick.ogg\n\
+#BMP01: bg.png\n\
+#RESULTMOVIE SS win.avi\n\
+#RESULTSOUND S fanfare.ogg\n\
+#00011: 01\n";
+        let (chart, _) = parse_dtx_chart(text, "result_media.dtx", ".").unwrap();
+        assert_eq!(chart.result_movie.for_rank("SS"), Some("win.avi"));
+        assert_eq!(chart.result_sound.for_rank("S"), Some("fanfare.ogg"));
+        assert_eq!(chart.result_image.for_rank("SS"), None);
+        assert_eq!(chart.result_movie.for_rank("S"), None);
+    }
+
+#[test]
     fn avi_directive_parses_to_video_def() {
         let text = "\
 #TITLE: avi\n\
