@@ -557,6 +557,15 @@ pub(crate) fn song_select_input(
         library.normalize_selection(&config.preferred_difficulty);
         changed = true;
     }
+    // Quick-config popup toggle. BocuD's `CActSelectQuickConfig` opens
+    // on the song-select screen with quick toggles for Dark / Auto /
+    // Ghost. We expose it via `F5` (consistent with dtxpt's other F-key
+    // bindings) and route to the existing Settings overlay when the
+    // user wants full configuration. The popup itself ships as a
+    // minimal flag toggle here; the visual popup is a polish pass.
+    if keyboard.just_pressed(KeyCode::F5) {
+        config.dark = config.dark.next();
+    }
     if let Some(key) = repeat.update(
         &keyboard,
         &time,

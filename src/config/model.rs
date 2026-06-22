@@ -218,6 +218,18 @@ pub enum DarkMode {
     Full,
 }
 
+impl DarkMode {
+    /// Cycle through the three Dark variants. Used by the song-select
+    /// quick-config popup (`F5`).
+    pub fn next(self) -> Self {
+        match self {
+            Self::Off => Self::Half,
+            Self::Half => Self::Full,
+            Self::Full => Self::Off,
+        }
+    }
+}
+
 /// Damage level applied to gauge deltas on Poor/Miss. BocuD `EDamageLevel`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DamageLevel {
